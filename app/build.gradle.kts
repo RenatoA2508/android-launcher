@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 android {
@@ -34,8 +35,6 @@ android {
              * Before any real distribution, this will
              * be replaced by the production signing setup.
              */
-            signingConfig =
-                signingConfigs.getByName("debug")
 
             /*
              * AGP 9.3+:
@@ -58,6 +57,12 @@ android {
     buildFeatures {
         compose = true
     }
+}
+
+baselineProfile {
+    saveInSrc = true
+    mergeIntoMain = true
+    automaticGenerationDuringBuild = false
 }
 
 dependencies {
@@ -131,5 +136,11 @@ dependencies {
 
     debugImplementation(
         libs.androidx.compose.ui.tooling
+    )
+
+    implementation(libs.androidx.profileinstaller)
+
+    baselineProfile(
+        project(":baselineprofile")
     )
 }

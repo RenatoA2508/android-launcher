@@ -1,47 +1,78 @@
 package com.renato.launcher
 
+import android.app.role.RoleManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import com.renato.launcher.ui.theme.LauncherTheme
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
         setContent {
             LauncherTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
+                val roleManager = getSystemService(RoleManager::class.java)
+
+                var isHomeApp by remember {
+                    mutableStateOf(
+                        roleManager.isRoleHeld(RoleManager.ROLE_HOME)
                     )
+                }
+
+                val homeRoleLauncher =
+                    rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.StartActivityForResult()
+                    ) {
+                        isHomeApp =
+                            roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+                    }
+
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = if (isHomeApp) {
+                            "Launcher is the default Home app"
+                        } else {
+                            "Launcher is not the default Home app"
+                        },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    if (!isHomeApp) {
+                        Button(
+                            onClick = {
+                                val intent =
+                                    roleManager.createRequestRoleIntent(
+                                        RoleManager.ROLE_HOME
+                                    )
+
+                                homeRoleLauncher.launch(intent)
+                            }
+                        ) {
+                            Text("Set as default launcher")
+                        }
+                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    LauncherTheme {
-        Greeting("Android")
     }
 }

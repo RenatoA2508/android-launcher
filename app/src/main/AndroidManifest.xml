@@ -10,19 +10,30 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Launcher">
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.Launcher"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
+	android:theme="@style/Theme.Launcher">
+	<activity
+	    android:name=".MainActivity"
+    	    android:exported="true"
+    	    android:label="@string/app_name"
+    	    android:theme="@style/Theme.Launcher">
 
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+    	    <!-- Allows the app to be launched normally during development -->
+    	    <intent-filter>
+            	<action android:name="android.intent.action.MAIN" />
+
+        	<category android:name="android.intent.category.LAUNCHER" />
+    	    </intent-filter>
+
+    	    <!-- Declares this Activity as a Home/Launcher candidate -->
+    	    <intent-filter>
+        	<action android:name="android.intent.action.MAIN" />
+
+        	<category android:name="android.intent.category.HOME" />
+        	<category android:name="android.intent.category.DEFAULT" />
+    	    </intent-filter>
+
+	</activity>
+
     </application>
 
 </manifest>

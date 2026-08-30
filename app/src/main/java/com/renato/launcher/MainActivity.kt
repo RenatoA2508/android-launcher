@@ -19,6 +19,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.renato.launcher.ui.theme.LauncherTheme
+import androidx.compose.runtime.LaunchedEffect
+import com.renato.launcher.apps.AppDiscoveryScreen
+import com.renato.launcher.apps.AppRepository
+import com.renato.launcher.core.model.InstalledApp
 
 class MainActivity : ComponentActivity() {
 
@@ -35,6 +39,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                var installedApps by remember {
+                    mutableStateOf(emptyList<InstalledApp>())
+                }
+
+                val appRepository = remember {
+                    AppRepository(applicationContext)
+                }
+
                 val homeRoleLauncher =
                     rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.StartActivityForResult()
@@ -42,6 +54,12 @@ class MainActivity : ComponentActivity() {
                         isHomeApp =
                             roleManager.isRoleHeld(RoleManager.ROLE_HOME)
                     }
+
+                LaunchedEffect(isHomeApp) {
+                    if (isHomeApp) {
+                        installedApps = appRepository.getInstalledApps()
+                    }
+                }
 
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -68,8 +86,12 @@ class MainActivity : ComponentActivity() {
                                 homeRoleLauncher.launch(intent)
                             }
                         ) {
-                            Text("Set as default launcher")
                         }
+                    }else{
+                        AppDiscoveryScreen(
+                            apps = installedApps,
+                            onAppClick = appRepository::launch
+                        )
                     }
                 }
             }

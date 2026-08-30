@@ -1,8 +1,9 @@
 package com.renato.launcher.home
 
 import android.text.format.DateFormat
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -44,10 +47,14 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     favoriteApps: List<InstalledApp>,
-    onAppClick: (InstalledApp) -> Unit
+    favoritesLoaded: Boolean,
+    onAppClick: (InstalledApp) -> Unit,
+    onChooseFavorites: () -> Unit,
+    onEditFavorites: () -> Unit
 ) {
     val wallpaperTextColor =
         rememberWallpaperTextColor()
@@ -59,6 +66,16 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .combinedClickable(
+                    onClick = {
+                        // Tapping empty Home space does nothing.
+                    },
+                    onLongClick = {
+                        if (favoritesLoaded) {
+                            onEditFavorites()
+                        }
+                    }
+                )
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
@@ -75,10 +92,56 @@ fun HomeScreen(
                 modifier = Modifier.height(72.dp)
             )
 
-            FavoriteAppsGrid(
-                apps = favoriteApps,
-                onAppClick = onAppClick,
-                textColor = wallpaperTextColor
+            if (
+                favoritesLoaded &&
+                favoriteApps.isEmpty()
+            ) {
+                EmptyFavoritesState(
+                    textColor = wallpaperTextColor,
+                    onChooseFavorites =
+                        onChooseFavorites
+                )
+            } else {
+                FavoriteAppsGrid(
+                    apps = favoriteApps,
+                    onAppClick = onAppClick,
+                    textColor = wallpaperTextColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyFavoritesState(
+    textColor: Color,
+    onChooseFavorites: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment =
+            Alignment.CenterHorizontally
+    ) {
+        Text(
+            text =
+                "Aún no tienes aplicaciones favoritas",
+            style = wallpaperTextStyle(
+                color = textColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Normal
+            ),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(
+            modifier = Modifier.height(16.dp)
+        )
+
+        Button(
+            onClick = onChooseFavorites
+        ) {
+            Text(
+                text = "Seleccionar aplicaciones"
             )
         }
     }
@@ -244,8 +307,12 @@ private fun FavoriteAppItem(
     Row(
         modifier = modifier
             .heightIn(min = 52.dp)
-            .clickable(
-                onClick = onClick
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    // App-specific long press will be
+                    // implemented later.
+                }
             )
             .padding(
                 horizontal = 4.dp,
@@ -286,12 +353,10 @@ private fun wallpaperTextStyle(
 
     val shadowColor =
         if (color.luminance() > 0.5f) {
-            // Light text -> dark shadow
             Color.Black.copy(
                 alpha = 0.45f
             )
         } else {
-            // Dark text -> light shadow
             Color.White.copy(
                 alpha = 0.35f
             )

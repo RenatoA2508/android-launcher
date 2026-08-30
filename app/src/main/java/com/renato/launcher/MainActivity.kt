@@ -29,22 +29,37 @@ import com.renato.launcher.data.database.favorite.FavoriteEntity
 import com.renato.launcher.favorites.FavoritePickerScreen
 import com.renato.launcher.favorites.FavoriteRepository
 import com.renato.launcher.home.HomeScreen
+import com.renato.launcher.search.SearchScreen
 import com.renato.launcher.ui.theme.LauncherTheme
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+private enum class LauncherScreen {
+    HOME,
+    FAVORITES,
+    SEARCH
+}
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+class MainActivity :
+    ComponentActivity() {
+
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
+        super.onCreate(
+            savedInstanceState
+        )
 
         window.addFlags(
-            WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER
+            WindowManager
+                .LayoutParams
+                .FLAG_SHOW_WALLPAPER
         )
 
-        window.setBackgroundDrawableResource(
-            android.R.color.transparent
-        )
+        window
+            .setBackgroundDrawableResource(
+                android.R.color.transparent
+            )
 
         setContent {
             LauncherTheme {
@@ -63,54 +78,75 @@ class MainActivity : ComponentActivity() {
 
                 val database =
                     remember {
-                        LauncherDatabase.getInstance(
-                            applicationContext
-                        )
+                        LauncherDatabase
+                            .getInstance(
+                                applicationContext
+                            )
                     }
 
                 val favoriteRepository =
                     remember {
                         FavoriteRepository(
-                            context = applicationContext,
+                            context =
+                                applicationContext,
                             favoriteDao =
-                                database.favoriteDao()
+                                database
+                                    .favoriteDao()
                         )
                     }
 
                 val coroutineScope =
                     rememberCoroutineScope()
 
-                var isHomeApp by remember {
-                    mutableStateOf(
-                        roleManager.isRoleHeld(
-                            RoleManager.ROLE_HOME
+                var isHomeApp by
+                    remember {
+                        mutableStateOf(
+                            roleManager
+                                .isRoleHeld(
+                                    RoleManager
+                                        .ROLE_HOME
+                                )
                         )
-                    )
-                }
+                    }
 
-                var installedApps by remember {
-                    mutableStateOf(
-                        emptyList<InstalledApp>()
-                    )
-                }
+                var currentScreen by
+                    remember {
+                        mutableStateOf(
+                            LauncherScreen.HOME
+                        )
+                    }
 
-                var installedAppsLoaded by remember {
-                    mutableStateOf(false)
-                }
+                var installedApps by
+                    remember {
+                        mutableStateOf(
+                            emptyList<
+                                InstalledApp
+                            >()
+                        )
+                    }
 
-                var savedFavorites by remember {
-                    mutableStateOf(
-                        emptyList<FavoriteEntity>()
-                    )
-                }
+                var installedAppsLoaded by
+                    remember {
+                        mutableStateOf(
+                            false
+                        )
+                    }
 
-                var savedFavoritesLoaded by remember {
-                    mutableStateOf(false)
-                }
+                var savedFavorites by
+                    remember {
+                        mutableStateOf(
+                            emptyList<
+                                FavoriteEntity
+                            >()
+                        )
+                    }
 
-                var showFavoritePicker by remember {
-                    mutableStateOf(false)
-                }
+                var savedFavoritesLoaded by
+                    remember {
+                        mutableStateOf(
+                            false
+                        )
+                    }
 
                 val homeRoleLauncher =
                     rememberLauncherForActivityResult(
@@ -119,20 +155,26 @@ class MainActivity : ComponentActivity() {
                                 .StartActivityForResult()
                     ) {
                         isHomeApp =
-                            roleManager.isRoleHeld(
-                                RoleManager.ROLE_HOME
-                            )
+                            roleManager
+                                .isRoleHeld(
+                                    RoleManager
+                                        .ROLE_HOME
+                                )
                     }
 
-                LaunchedEffect(isHomeApp) {
+                LaunchedEffect(
+                    isHomeApp
+                ) {
                     if (isHomeApp) {
-                        installedAppsLoaded = false
+                        installedAppsLoaded =
+                            false
 
                         installedApps =
                             appRepository
                                 .getInstalledApps()
 
-                        installedAppsLoaded = true
+                        installedAppsLoaded =
+                            true
                     }
                 }
 
@@ -141,7 +183,8 @@ class MainActivity : ComponentActivity() {
                 ) {
                     favoriteRepository
                         .favorites
-                        .collect { favorites ->
+                        .collect {
+                                favorites ->
 
                             savedFavorites =
                                 favorites
@@ -167,60 +210,118 @@ class MainActivity : ComponentActivity() {
 
                 if (isHomeApp) {
 
-                    if (showFavoritePicker) {
-                        FavoritePickerScreen(
-                            apps = installedApps,
-                            initialSelection =
-                                favoriteApps,
-                            onCancel = {
-                                showFavoritePicker =
-                                    false
-                            },
-                            onSave = { selectedApps ->
+                    when (
+                        currentScreen
+                    ) {
 
-                                coroutineScope.launch {
-                                    favoriteRepository
-                                        .replaceFavorites(
-                                            selectedApps
-                                        )
+                        LauncherScreen.HOME -> {
 
-                                    showFavoritePicker =
-                                        false
+                            HomeScreen(
+                                favoriteApps =
+                                    favoriteApps,
+                                favoritesLoaded =
+                                    installedAppsLoaded &&
+                                        savedFavoritesLoaded,
+                                onAppClick =
+                                    appRepository::launch,
+                                onChooseFavorites = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .FAVORITES
+                                },
+                                onEditFavorites = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .FAVORITES
+                                },
+                                onOpenSearch = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .SEARCH
                                 }
-                            }
-                        )
-                    } else {
-                        HomeScreen(
-                            favoriteApps =
-                                favoriteApps,
-                            favoritesLoaded =
-                                installedAppsLoaded &&
-                                    savedFavoritesLoaded,
-                            onAppClick =
-                                appRepository::launch,
-                            onChooseFavorites = {
-                                showFavoritePicker =
-                                    true
-                            },
-                            onEditFavorites = {
-                                showFavoritePicker =
-                                    true
-                            }
-                        )
+                            )
+                        }
+
+                        LauncherScreen.FAVORITES -> {
+
+                            FavoritePickerScreen(
+                                apps =
+                                    installedApps,
+                                initialSelection =
+                                    favoriteApps,
+                                onCancel = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .HOME
+                                },
+                                onSave = {
+                                        selectedApps ->
+
+                                    coroutineScope
+                                        .launch {
+                                            favoriteRepository
+                                                .replaceFavorites(
+                                                    selectedApps
+                                                )
+
+                                            currentScreen =
+                                                LauncherScreen
+                                                    .HOME
+                                        }
+                                }
+                            )
+                        }
+
+                        LauncherScreen.SEARCH -> {
+
+                            SearchScreen(
+                                apps =
+                                    installedApps,
+                                onAppClick = {
+                                        app ->
+
+                                    /*
+                                     * Reset launcher to Home
+                                     * BEFORE launching the app.
+                                     *
+                                     * Therefore pressing Home
+                                     * later returns to Home,
+                                     * not the previous Search.
+                                     */
+                                    currentScreen =
+                                        LauncherScreen
+                                            .HOME
+
+                                    appRepository
+                                        .launch(
+                                            app
+                                        )
+                                },
+                                onBack = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .HOME
+                                }
+                            )
+                        }
                     }
 
                 } else {
 
                     DefaultLauncherSetupScreen(
                         onSetDefaultLauncher = {
+
                             val intent =
                                 roleManager
                                     .createRequestRoleIntent(
-                                        RoleManager.ROLE_HOME
+                                        RoleManager
+                                            .ROLE_HOME
                                     )
 
                             homeRoleLauncher
-                                .launch(intent)
+                                .launch(
+                                    intent
+                                )
                         }
                     )
                 }
@@ -231,10 +332,12 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun DefaultLauncherSetupScreen(
-    onSetDefaultLauncher: () -> Unit
+    onSetDefaultLauncher:
+        () -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier =
+            Modifier.fillMaxSize(),
         horizontalAlignment =
             Alignment.CenterHorizontally,
         verticalArrangement =
@@ -244,7 +347,8 @@ private fun DefaultLauncherSetupScreen(
             text =
                 "Launcher is not the default Home app",
             style =
-                MaterialTheme.typography
+                MaterialTheme
+                    .typography
                     .titleMedium
         )
 

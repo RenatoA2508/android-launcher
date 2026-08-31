@@ -15,16 +15,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
+import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 
 @Composable
 fun AppDiscoveryScreen(
     apps: List<InstalledApp>,
     onAppClick: (InstalledApp) -> Unit
 ) {
+
+    PreloadLauncherAppIcons(
+        apps = apps
+    )
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
         modifier = Modifier.fillMaxSize(),
@@ -47,10 +52,13 @@ fun AppDiscoveryScreen(
                     .padding(4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                val iconBitmap =
+                    rememberLauncherAppIcon(
+                        app
+                    )
+
                 Image(
-                    bitmap = app.icon
-                        .toBitmap()
-                        .asImageBitmap(),
+                    bitmap = iconBitmap,
                     contentDescription = app.label,
                     modifier = Modifier.size(48.dp)
                 )

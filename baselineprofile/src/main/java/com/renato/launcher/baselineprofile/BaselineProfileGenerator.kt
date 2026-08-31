@@ -40,10 +40,7 @@ class BaselineProfileGenerator {
             stableIterations =
                 3
         ) {
-            /*
-             * For startup profiling we still launch
-             * MainActivity directly.
-             */
+
             startActivityAndWait()
 
             device.waitForIdle()
@@ -62,15 +59,17 @@ class BaselineProfileGenerator {
      *  ↓
      * Search
      *  ↓
-     * keyboard
+     * search field
      *  ↓
      * type query
      *  ↓
+     * shared AppSearchEngine
+     *  ↓
      * ranking
      *  ↓
-     * first result
+     * Compose results
      *  ↓
-     * launch
+     * first result
      */
     @Test
     fun search() =
@@ -86,20 +85,13 @@ class BaselineProfileGenerator {
         ) {
 
             /*
-             * IMPORTANT:
+             * Our app is Android's Home application.
              *
-             * Our application IS Android's Home app.
-             *
-             * Instead of launching MainActivity and
-             * assuming that its internal state is HOME,
-             * explicitly press Android's Home button.
+             * Explicitly return to Home before each
+             * iteration.
              */
             device.pressHome()
 
-            /*
-             * Wait until the actual Home composable
-             * is visible.
-             */
             val homeVisible =
                 device.wait(
                     Until.hasObject(
@@ -119,11 +111,10 @@ class BaselineProfileGenerator {
             device.waitForIdle()
 
             /*
-             * Swipe upward through an empty part of Home.
+             * Human-like upward swipe.
              *
-             * 60 steps intentionally produces a gesture
-             * closer to a real finger than the previous
-             * very short swipe.
+             * This version was already verified on
+             * the physical Samsung.
              */
             val centerX =
                 device.displayWidth / 2
@@ -149,8 +140,7 @@ class BaselineProfileGenerator {
             )
 
             /*
-             * First verify that the gesture actually
-             * changed the launcher from Home to Search.
+             * Search itself MUST open.
              */
             val searchVisible =
                 device.wait(
@@ -169,7 +159,8 @@ class BaselineProfileGenerator {
             }
 
             /*
-             * Now verify the search field.
+             * The real Compose search field MUST
+             * also be exposed.
              */
             val searchFieldVisible =
                 device.wait(
@@ -195,27 +186,39 @@ class BaselineProfileGenerator {
                 )
 
             /*
-             * Search already requests focus itself,
-             * but clicking makes the benchmark robust
-             * if IME focus is slightly delayed.
+             * Explicit focus.
              */
             searchField.click()
 
             device.waitForIdle()
 
             /*
-             * Generic query.
+             * IMPORTANT:
              *
-             * We intentionally don't depend on
-             * WhatsApp/Discord/etc. being installed.
+             * Put the text directly through UiAutomator
+             * rather than depending on shell keyboard
+             * injection.
+             *
+             * Setting this text forces:
+             *
+             * - query state update
+             * - AppSearchEngine.search()
+             * - normalization
+             * - aliases/acronym evaluation
+             * - ranking
+             * - result recomposition
              */
-            device.executeShellCommand(
-                "input text a"
+            searchField.setText(
+                SEARCH_QUERY
             )
 
             /*
-             * Give Compose + ranking + grid a chance
-             * to expose the first result.
+             * Unlike the previous generator, a result
+             * is now MANDATORY.
+             *
+             * If the shared search engine isn't executed
+             * correctly, profile generation fails instead
+             * of silently producing an incomplete profile.
              */
             val firstResultVisible =
                 device.wait(
@@ -227,26 +230,28 @@ class BaselineProfileGenerator {
                     RESULT_TIMEOUT_MS
                 )
 
-            /*
-             * If there is a result, also profile the
-             * complete Search -> launch app path.
-             *
-             * If a device happens to have no matching
-             * application, Search itself can still
-             * generate a valid profile.
-             */
-            if (firstResultVisible) {
-
-                device
-                    .findObject(
-                        By.res(
-                            FIRST_SEARCH_RESULT_TAG
-                        )
-                    )
-                    .click()
-
-                device.waitForIdle()
+            check(
+                firstResultVisible
+            ) {
+                "Search ranking did not produce a result."
             }
+
+            /*
+             * Touch the result as part of the critical
+             * Search journey.
+             *
+             * pressHome() at the beginning of the next
+             * iteration returns us to the launcher.
+             */
+            device
+                .findObject(
+                    By.res(
+                        FIRST_SEARCH_RESULT_TAG
+                    )
+                )
+                .click()
+
+            device.waitForIdle()
         }
 
     private companion object {
@@ -266,10 +271,18 @@ class BaselineProfileGenerator {
         const val FIRST_SEARCH_RESULT_TAG =
             "launcher_search_result_0"
 
+        /*
+         * Generic query suitable for the physical
+         * test device and broad enough to exercise
+         * several ranking candidates.
+         */
+        const val SEARCH_QUERY =
+            "a"
+
         const val UI_TIMEOUT_MS =
             5_000L
 
         const val RESULT_TIMEOUT_MS =
-            3_000L
+            5_000L
     }
 }

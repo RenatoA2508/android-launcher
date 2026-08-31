@@ -16,10 +16,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,20 +27,15 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,9 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -67,14 +58,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.ui.components.LauncherSearchBar
+import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
+import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 import java.text.Collator
 import java.text.Normalizer
 import java.util.Locale
@@ -120,13 +112,6 @@ fun SearchScreen(
             }
         }
 
-    /*
-     * Build the normalized search index only when
-     * the installed application list changes.
-     *
-     * We do NOT normalize every application again
-     * for every keyboard character.
-     */
     val searchIndex =
         remember(apps) {
             apps.map { app ->
@@ -185,6 +170,28 @@ fun SearchScreen(
                     collator
             )
         }
+
+    /*
+     * Only preload what is likely to be displayed
+     * immediately.
+     *
+     * The shared process-level cache retains every
+     * icon once it has been prepared.
+     */
+    val iconsToPreload =
+        if (query.isBlank()) {
+            recentApps +
+                recentSearchApps
+        } else {
+            results.take(12)
+        }
+
+    PreloadLauncherAppIcons(
+        apps =
+            iconsToPreload.distinctBy {
+                appKey(it)
+            }
+    )
 
     fun closeSearch() {
         keyboardController?.hide()
@@ -252,7 +259,6 @@ fun SearchScreen(
                         available.y < 0f ||
                         !isAtTop
                     ) {
-
                         accumulatedDownwardDrag =
                             0f
 
@@ -260,10 +266,6 @@ fun SearchScreen(
                             false
                     }
 
-                    /*
-                     * Observe the gesture without
-                     * stealing scrolling from the grid.
-                     */
                     return Offset.Zero
                 }
 
@@ -286,19 +288,6 @@ fun SearchScreen(
         closeSearch()
     }
 
-    /*
-     * Frame 1:
-     * Search UI becomes visible.
-     *
-     * Frame 2:
-     * Search field receives focus.
-     *
-     * Frame 3:
-     * Keyboard opens.
-     *
-     * This proved smoother than doing all three
-     * operations in the same frame.
-     */
     LaunchedEffect(Unit) {
         withFrameNanos { }
 
@@ -309,11 +298,6 @@ fun SearchScreen(
         keyboardController?.show()
     }
 
-    /*
-     * If the user has scrolled search results and
-     * changes the query, move the new results back
-     * to the beginning.
-     */
     LaunchedEffect(query) {
         if (
             query.isNotBlank() &&
@@ -345,8 +329,9 @@ fun SearchScreen(
                 .statusBarsPadding()
                 .navigationBarsPadding()
         ) {
-            SearchHeader(
-                query = query,
+            LauncherSearchBar(
+                query =
+                    query,
                 onQueryChange = {
                     query = it
                 },
@@ -364,11 +349,6 @@ fun SearchScreen(
                         .firstOrNull()
                         ?.let { app ->
 
-                            /*
-                             * true:
-                             * this application was opened
-                             * from an actual typed search.
-                             */
                             onAppClick(
                                 app,
                                 true
@@ -393,25 +373,19 @@ fun SearchScreen(
                     PaddingValues(
                         start = 20.dp,
                         end = 20.dp,
-                        top = 12.dp,
-                        bottom = 24.dp
+                        top = 6.dp,
+                        bottom = 16.dp
                     ),
                 horizontalArrangement =
                     Arrangement.spacedBy(
-                        10.dp
+                        8.dp
                     ),
                 verticalArrangement =
                     Arrangement.spacedBy(
-                        14.dp
+                        6.dp
                     )
             ) {
 
-                /*
-                 * SEARCH IS EMPTY
-                 *
-                 * Show recent applications and
-                 * recently searched applications.
-                 */
                 if (query.isBlank()) {
 
                     if (
@@ -436,8 +410,7 @@ fun SearchScreen(
                     } else {
 
                         if (
-                            recentApps
-                                .isNotEmpty()
+                            recentApps.isNotEmpty()
                         ) {
 
                             item(
@@ -472,13 +445,6 @@ fun SearchScreen(
                                 SearchAppItem(
                                     app = app,
                                     onClick = {
-
-                                        /*
-                                         * Opening from Recents
-                                         * updates Recents but is
-                                         * not considered a typed
-                                         * search.
-                                         */
                                         onAppClick(
                                             app,
                                             false
@@ -525,13 +491,6 @@ fun SearchScreen(
                                 SearchAppItem(
                                     app = app,
                                     onClick = {
-
-                                        /*
-                                         * Reopening an application
-                                         * from search history moves
-                                         * it back to the beginning
-                                         * of that history.
-                                         */
                                         onAppClick(
                                             app,
                                             true
@@ -546,9 +505,6 @@ fun SearchScreen(
                     results.isEmpty()
                 ) {
 
-                    /*
-                     * QUERY WITH NO RESULTS
-                     */
                     item(
                         key =
                             "no-results",
@@ -569,61 +525,11 @@ fun SearchScreen(
                 } else {
 
                     /*
-                     * QUERY WITH RESULTS
+                     * No "Aplicaciones" heading and no
+                     * result counter.
+                     *
+                     * Search results begin immediately.
                      */
-                    item(
-                        key =
-                            "results-heading",
-                        contentType =
-                            "heading",
-                        span = {
-                            GridItemSpan(
-                                maxLineSpan
-                            )
-                        }
-                    ) {
-                        Column {
-                            Text(
-                                text =
-                                    "Aplicaciones",
-                                fontSize =
-                                    19.sp,
-                                fontWeight =
-                                    FontWeight
-                                        .SemiBold,
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .onSurface
-                            )
-
-                            Spacer(
-                                modifier =
-                                    Modifier.height(
-                                        2.dp
-                                    )
-                            )
-
-                            Text(
-                                text =
-                                    if (
-                                        results.size ==
-                                        1
-                                    ) {
-                                        "1 resultado"
-                                    } else {
-                                        "${results.size} resultados"
-                                    },
-                                fontSize =
-                                    13.sp,
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .onSurfaceVariant
-                            )
-                        }
-                    }
-
                     items(
                         items =
                             results,
@@ -639,7 +545,6 @@ fun SearchScreen(
                         SearchAppItem(
                             app = app,
                             onClick = {
-
                                 onAppClick(
                                     app,
                                     true
@@ -654,106 +559,6 @@ fun SearchScreen(
 }
 
 @Composable
-private fun SearchHeader(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    focusRequester: FocusRequester,
-    onBack: () -> Unit,
-    onClear: () -> Unit,
-    onSubmit: () -> Unit
-) {
-    Surface(
-        modifier =
-            Modifier.fillMaxWidth(),
-        color =
-            MaterialTheme
-                .colorScheme
-                .surface
-                .copy(
-                    alpha = 0.88f
-                )
-    ) {
-        Row(
-            modifier =
-                Modifier.padding(
-                    start = 8.dp,
-                    end = 16.dp,
-                    top = 10.dp,
-                    bottom = 10.dp
-                ),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-            PressTextButton(
-                text = "‹",
-                fontSize = 32,
-                onClick =
-                    onBack
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.width(
-                        2.dp
-                    )
-            )
-
-            OutlinedTextField(
-                value =
-                    query,
-                onValueChange =
-                    onQueryChange,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .focusRequester(
-                            focusRequester
-                        ),
-                placeholder = {
-                    Text(
-                        text =
-                            "Buscar aplicaciones"
-                    )
-                },
-                trailingIcon = {
-
-                    if (
-                        query.isNotEmpty()
-                    ) {
-                        TextButton(
-                            onClick =
-                                onClear
-                        ) {
-                            Text(
-                                text = "×",
-                                fontSize =
-                                    22.sp
-                            )
-                        }
-                    }
-                },
-                keyboardOptions =
-                    KeyboardOptions(
-                        imeAction =
-                            ImeAction.Go
-                    ),
-                keyboardActions =
-                    KeyboardActions(
-                        onGo = {
-                            onSubmit()
-                        }
-                    ),
-                singleLine = true,
-                shape =
-                    RoundedCornerShape(
-                        28.dp
-                    )
-            )
-        }
-    }
-}
-
-@Composable
 private fun SearchSectionHeader(
     title: String
 ) {
@@ -763,10 +568,10 @@ private fun SearchSectionHeader(
         modifier =
             Modifier.padding(
                 top = 8.dp,
-                bottom = 2.dp
+                bottom = 0.dp
             ),
         fontSize =
-            19.sp,
+            17.sp,
         fontWeight =
             FontWeight.SemiBold,
         color =
@@ -782,7 +587,7 @@ private fun EmptySearchState() {
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                top = 48.dp
+                top = 40.dp
             ),
         horizontalAlignment =
             Alignment.CenterHorizontally
@@ -837,7 +642,7 @@ private fun NoResultsState(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                top = 48.dp,
+                top = 40.dp,
                 start = 24.dp,
                 end = 24.dp
             ),
@@ -858,17 +663,9 @@ private fun SearchAppItem(
     onClick: () -> Unit
 ) {
     val iconBitmap =
-        remember(
-            app.componentName,
-            app.user
-        ) {
-            app.icon
-                .toBitmap(
-                    width = 96,
-                    height = 96
-                )
-                .asImageBitmap()
-        }
+        rememberLauncherAppIcon(
+            app
+        )
 
     val interactionSource =
         remember {
@@ -887,7 +684,7 @@ private fun SearchAppItem(
             )
             .clip(
                 RoundedCornerShape(
-                    20.dp
+                    18.dp
                 )
             )
             .clickable(
@@ -899,8 +696,8 @@ private fun SearchAppItem(
                     onClick
             )
             .padding(
-                horizontal = 4.dp,
-                vertical = 10.dp
+                horizontal = 3.dp,
+                vertical = 6.dp
             ),
         horizontalAlignment =
             Alignment.CenterHorizontally
@@ -912,14 +709,14 @@ private fun SearchAppItem(
                 app.label,
             modifier =
                 Modifier.size(
-                    46.dp
+                    44.dp
                 )
         )
 
         Spacer(
             modifier =
                 Modifier.height(
-                    7.dp
+                    5.dp
                 )
         )
 
@@ -934,42 +731,11 @@ private fun SearchAppItem(
             fontSize =
                 12.sp,
             lineHeight =
-                14.sp,
+                13.sp,
             color =
                 MaterialTheme
                     .colorScheme
                     .onSurface
-        )
-    }
-}
-
-@Composable
-private fun PressTextButton(
-    text: String,
-    fontSize: Int,
-    onClick: () -> Unit
-) {
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
-    TextButton(
-        onClick =
-            onClick,
-        interactionSource =
-            interactionSource,
-        modifier =
-            Modifier.pressScale(
-                interactionSource =
-                    interactionSource
-            )
-    ) {
-        Text(
-            text =
-                text,
-            fontSize =
-                fontSize.sp
         )
     }
 }
@@ -996,8 +762,7 @@ private fun Modifier.pressScale(
             animationSpec =
                 if (isPressed) {
                     tween(
-                        durationMillis =
-                            55,
+                        durationMillis = 55,
                         easing =
                             FastOutSlowInEasing
                     )
@@ -1013,12 +778,9 @@ private fun Modifier.pressScale(
                 "searchPressScale"
         )
 
-    return this.graphicsLayer {
-        scaleX =
-            scale
-
-        scaleY =
-            scale
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
     }
 }
 
@@ -1089,12 +851,6 @@ private fun SearchWindowEffect() {
     }
 }
 
-/*
- * ------------------------------------------------------------------
- * SEARCH ENGINE
- * ------------------------------------------------------------------
- */
-
 private data class SearchIndexEntry(
     val app: InstalledApp,
     val normalizedLabel: String,
@@ -1150,13 +906,6 @@ private fun rankSearchResults(
                 }
             }
 
-    /*
-     * Explicit Comparator instead of labeled
-     * returns inside sortedWith.
-     *
-     * This avoids the Kotlin return-type problem
-     * we encountered previously.
-     */
     val comparator =
         Comparator<RankedSearchResult> {
                 first,
@@ -1167,10 +916,9 @@ private fun rankSearchResults(
                 first.score !=
                     second.score -> {
 
-                    first.score
-                        .compareTo(
-                            second.score
-                        )
+                    first.score.compareTo(
+                        second.score
+                    )
                 }
 
                 first.entry
@@ -1218,14 +966,6 @@ private fun searchScore(
     query: String
 ): Int? {
 
-    /*
-     * Acronyms and aliases don't contain spaces,
-     * so make a compact version of the query too.
-     *
-     * Example:
-     *
-     * "g m" → "gm"
-     */
     val compactQuery =
         query.replace(
             " ",
@@ -1234,27 +974,9 @@ private fun searchScore(
 
     return when {
 
-        /*
-         * 1. Exact application name.
-         *
-         * "spotify"
-         *      ↓
-         * Spotify
-         */
         entry.normalizedLabel ==
             query -> 0
 
-        /*
-         * 2. Exact known abbreviation.
-         *
-         * wsp → WhatsApp
-         * ds  → Discord
-         *
-         * Or exact automatic acronym:
-         *
-         * gm → Google Maps
-         * sn → Samsung Notes
-         */
         entry.aliases
             .contains(
                 compactQuery
@@ -1265,23 +987,11 @@ private fun searchScore(
             entry.acronym ==
                 compactQuery -> 1
 
-        /*
-         * 3. Application name starts with query.
-         *
-         * spo → Spotify
-         */
         entry.normalizedLabel
             .startsWith(
                 query
             ) -> 2
 
-        /*
-         * 4. A word inside the app name starts
-         *    with the query.
-         *
-         * maps → Google Maps
-         * notes → Samsung Notes
-         */
         entry.normalizedWords
             .any { word ->
                 word.startsWith(
@@ -1289,15 +999,6 @@ private fun searchScore(
                 )
             } -> 3
 
-        /*
-         * 5. Partial abbreviation/acronym.
-         *
-         * ws → WhatsApp via "wsp"
-         *
-         * We require at least two characters
-         * to prevent a one-character search from
-         * matching dozens of acronyms.
-         */
         compactQuery.length >= 2 &&
             entry.aliases
                 .any { alias ->
@@ -1314,10 +1015,6 @@ private fun searchScore(
                     compactQuery
                 ) -> 4
 
-        /*
-         * 6. Last resort:
-         * query appears somewhere in the name.
-         */
         entry.normalizedLabel
             .contains(
                 query
@@ -1347,15 +1044,6 @@ private fun buildAcronym(
     words: List<String>
 ): String {
 
-    /*
-     * Acronyms only make sense when an app
-     * has at least two words.
-     *
-     * Google Maps     → gm
-     * Google Photos   → gp
-     * Samsung Notes   → sn
-     * Microsoft Teams → mt
-     */
     if (
         words.size < 2
     ) {
@@ -1375,14 +1063,6 @@ private fun searchAliasesFor(
     normalizedLabel: String
 ): Set<String> {
 
-    /*
-     * Some commonly used abbreviations cannot be
-     * derived reliably from the application name.
-     *
-     * Keep this list intentionally small and
-     * predictable. We can expand it later when
-     * there is a real use case.
-     */
     return when {
 
         normalizedLabel

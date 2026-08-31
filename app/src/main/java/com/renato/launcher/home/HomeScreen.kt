@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -44,11 +43,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 import com.renato.launcher.core.model.InstalledApp
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
+import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -447,14 +446,9 @@ private fun FavoriteAppItem(
         Modifier
 ) {
     val iconBitmap =
-        remember(
-            app.componentName,
-            app.user
-        ) {
-            app.icon
-                .toBitmap()
-                .asImageBitmap()
-        }
+        rememberLauncherAppIcon(
+            app
+        )
 
     Row(
         modifier = modifier

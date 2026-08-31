@@ -71,9 +71,6 @@ import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.ui.components.LauncherSearchBar
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
-import java.text.Collator
-import java.text.Normalizer
-import java.util.Locale
 
 @Composable
 fun SearchScreen(
@@ -117,80 +114,42 @@ fun SearchScreen(
         }
 
     /*
-     * Search index.
+     * Shared search engine.
      *
-     * Application names are normalized only when
-     * the installed app list changes, not for every
-     * keyboard character.
+     * The index is built only when the installed
+     * application list changes.
      */
-    val searchIndex =
+    val searchEngine =
         remember(apps) {
-
-            apps.map { app ->
-
-                val normalizedLabel =
-                    normalizeSearchText(
-                        app.label
-                    )
-
-                val words =
-                    splitSearchWords(
-                        normalizedLabel
-                    )
-
-                SearchIndexEntry(
-                    app =
-                        app,
-                    normalizedLabel =
-                        normalizedLabel,
-                    normalizedWords =
-                        words,
-                    acronym =
-                        buildAcronym(
-                            words
-                        ),
-                    aliases =
-                        searchAliasesFor(
-                            normalizedLabel
-                        )
-                )
-            }
+            AppSearchEngine(
+                apps =
+                    apps
+            )
         }
 
-    val collator =
-        remember {
-            Collator
-                .getInstance(
-                    Locale.getDefault()
-                )
-                .apply {
-                    strength =
-                        Collator.PRIMARY
-                }
-        }
-
+    /*
+     * Search now consumes exactly the same ranking
+     * engine as FavoritePickerScreen.
+     */
     val results =
         remember(
-            searchIndex,
+            searchEngine,
             query
         ) {
-            rankSearchResults(
-                searchIndex =
-                    searchIndex,
+            searchEngine.search(
                 query =
-                    query,
-                collator =
-                    collator
+                    query
             )
         }
 
     /*
      * Shared launcher icon cache.
      *
-     * When Search is empty, preload the applications
-     * that will immediately be visible.
+     * Empty Search:
+     * preload immediately visible history.
      *
-     * When typing, preload the first search results.
+     * Typed Search:
+     * preload the first results.
      */
     val iconsToPreload =
         if (query.isBlank()) {
@@ -223,11 +182,8 @@ fun SearchScreen(
     }
 
     /*
-     * Swipe down closes Search only when the list is
-     * already at the top.
-     *
-     * Therefore normal scrolling through results
-     * cannot accidentally close Search.
+     * Swipe down closes Search only when the grid is
+     * already at its top.
      */
     val swipeDownConnection =
         remember(
@@ -260,7 +216,7 @@ fun SearchScreen(
 
                     if (
                         source ==
-                        NestedScrollSource.UserInput &&
+                            NestedScrollSource.UserInput &&
                         isAtTop &&
                         available.y > 0f
                     ) {
@@ -271,7 +227,7 @@ fun SearchScreen(
                         if (
                             !closeTriggered &&
                             accumulatedDownwardDrag >=
-                            swipeDownThresholdPx
+                                swipeDownThresholdPx
                         ) {
 
                             closeTriggered =
@@ -299,10 +255,9 @@ fun SearchScreen(
                     }
 
                     /*
-                     * Observe only.
-                     *
-                     * Do not steal the gesture from
-                     * LazyVerticalGrid.
+                     * Observe the drag but don't consume
+                     * it, so LazyVerticalGrid continues
+                     * scrolling normally.
                      */
                     return Offset.Zero
                 }
@@ -329,12 +284,9 @@ fun SearchScreen(
     /*
      * Search startup:
      *
-     * frame 1 -> compose Search
+     * frame 1 -> compose
      * frame 2 -> request focus
-     * frame 3 -> show IME
-     *
-     * This produced better 120 Hz behavior than
-     * performing everything simultaneously.
+     * frame 3 -> show keyboard
      */
     LaunchedEffect(Unit) {
 
@@ -348,8 +300,8 @@ fun SearchScreen(
     }
 
     /*
-     * A changed query should show its results
-     * from the beginning.
+     * New queries always begin at the top of the
+     * result grid.
      */
     LaunchedEffect(query) {
 
@@ -370,11 +322,8 @@ fun SearchScreen(
     }
 
     /*
-     * testTagsAsResourceId allows UI Automator to
-     * find our Compose testTag values through
-     * By.res(...).
-     *
-     * This has no visual effect.
+     * testTagsAsResourceId keeps Search discoverable
+     * by UI Automator for Baseline Profile generation.
      */
     Surface(
         modifier =
@@ -404,11 +353,6 @@ fun SearchScreen(
                     .navigationBarsPadding()
         ) {
 
-            /*
-             * Stable automation tag:
-             *
-             * launcher_search_field
-             */
             LauncherSearchBar(
                 query =
                     query,
@@ -508,11 +452,8 @@ fun SearchScreen(
                     } else {
 
                         /*
-                         * -----------------------------
                          * RECENT APPS
-                         * -----------------------------
                          */
-
                         if (
                             recentApps.isNotEmpty()
                         ) {
@@ -555,13 +496,6 @@ fun SearchScreen(
                                         app,
                                     onClick = {
 
-                                        /*
-                                         * Opening from Recents:
-                                         *
-                                         * update general recents,
-                                         * but don't count as a new
-                                         * typed search.
-                                         */
                                         onAppClick(
                                             app,
                                             false
@@ -572,11 +506,8 @@ fun SearchScreen(
                         }
 
                         /*
-                         * -----------------------------
-                         * RECENT SEARCH APPS
-                         * -----------------------------
+                         * RECENTLY SEARCHED APPS
                          */
-
                         if (
                             recentSearchApps
                                 .isNotEmpty()
@@ -620,12 +551,6 @@ fun SearchScreen(
                                         app,
                                     onClick = {
 
-                                        /*
-                                         * Reopening something from
-                                         * the search history moves
-                                         * it back to the top of
-                                         * that history.
-                                         */
                                         onAppClick(
                                             app,
                                             true
@@ -642,10 +567,9 @@ fun SearchScreen(
 
                     /*
                      * =================================================
-                     * QUERY WITH NO RESULTS
+                     * NO RESULTS
                      * =================================================
                      */
-
                     item(
                         key =
                             "no-results",
@@ -671,21 +595,12 @@ fun SearchScreen(
                      * SEARCH RESULTS
                      * =================================================
                      *
-                     * No "Aplicaciones" heading.
-                     * No result counter.
+                     * No heading.
+                     * No result count.
                      *
-                     * Results start immediately below
-                     * the search field.
-                     *
-                     * Every result gets an automation
-                     * tag:
-                     *
-                     * launcher_search_result_0
-                     * launcher_search_result_1
-                     * launcher_search_result_2
-                     * ...
+                     * Results begin immediately below
+                     * the search bar.
                      */
-
                     itemsIndexed(
                         items =
                             results,
@@ -846,12 +761,6 @@ private fun SearchAppItem(
     onClick: () -> Unit
 ) {
 
-    /*
-     * Shared process-wide launcher icon cache.
-     *
-     * No Drawable -> Bitmap conversion happens
-     * inside Search.
-     */
     val iconBitmap =
         rememberLauncherAppIcon(
             app
@@ -869,27 +778,20 @@ private fun SearchAppItem(
         modifier =
             Modifier
                 .fillMaxWidth()
-
-                /*
-                 * Search result automation tag.
-                 *
-                 * Recent apps don't get one because
-                 * the Baseline Profile only needs
-                 * deterministic tags for typed
-                 * search results.
-                 */
                 .then(
                     if (
                         testTag != null
                     ) {
+
                         Modifier.testTag(
                             testTag
                         )
+
                     } else {
+
                         Modifier
                     }
                 )
-
                 .pressScale(
                     interactionSource =
                         interactionSource
@@ -959,45 +861,45 @@ private fun SearchAppItem(
 @Composable
 private fun Modifier.pressScale(
     interactionSource:
-    MutableInteractionSource,
+        MutableInteractionSource,
     pressedScale: Float =
         0.965f
 ): Modifier {
 
     val isPressed by
-    interactionSource
-        .collectIsPressedAsState()
+        interactionSource
+            .collectIsPressedAsState()
 
     val scale by
-    animateFloatAsState(
-        targetValue =
-            if (isPressed) {
-                pressedScale
-            } else {
-                1f
-            },
-        animationSpec =
-            if (isPressed) {
+        animateFloatAsState(
+            targetValue =
+                if (isPressed) {
+                    pressedScale
+                } else {
+                    1f
+                },
+            animationSpec =
+                if (isPressed) {
 
-                tween(
-                    durationMillis =
-                        55,
-                    easing =
-                        FastOutSlowInEasing
-                )
+                    tween(
+                        durationMillis =
+                            55,
+                        easing =
+                            FastOutSlowInEasing
+                    )
 
-            } else {
+                } else {
 
-                spring(
-                    dampingRatio =
-                        0.82f,
-                    stiffness =
-                        900f
-                )
-            },
-        label =
-            "searchPressScale"
-    )
+                    spring(
+                        dampingRatio =
+                            0.82f,
+                        stiffness =
+                            900f
+                    )
+                },
+            label =
+                "searchPressScale"
+        )
 
     return graphicsLayer {
 
@@ -1030,7 +932,7 @@ private fun SearchWindowEffect() {
         if (
             window != null &&
             Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.S
+                Build.VERSION_CODES.S
         ) {
 
             window.addFlags(
@@ -1056,7 +958,7 @@ private fun SearchWindowEffect() {
             if (
                 window != null &&
                 Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.S
+                    Build.VERSION_CODES.S
             ) {
 
                 val attributes =
@@ -1080,373 +982,6 @@ private fun SearchWindowEffect() {
     }
 }
 
-/*
- * ============================================================
- * SEARCH ENGINE
- * ============================================================
- */
-
-private data class SearchIndexEntry(
-    val app: InstalledApp,
-    val normalizedLabel: String,
-    val normalizedWords: List<String>,
-    val acronym: String,
-    val aliases: Set<String>
-)
-
-private data class RankedSearchResult(
-    val entry: SearchIndexEntry,
-    val score: Int
-)
-
-private fun rankSearchResults(
-    searchIndex:
-    List<SearchIndexEntry>,
-    query: String,
-    collator: Collator
-): List<InstalledApp> {
-
-    val normalizedQuery =
-        normalizeSearchText(
-            query
-        )
-
-    if (
-        normalizedQuery.isBlank()
-    ) {
-        return emptyList()
-    }
-
-    val rankedResults =
-        searchIndex
-            .mapNotNull { entry ->
-
-                val score =
-                    searchScore(
-                        entry =
-                            entry,
-                        query =
-                            normalizedQuery
-                    )
-
-                if (
-                    score == null
-                ) {
-
-                    null
-
-                } else {
-
-                    RankedSearchResult(
-                        entry =
-                            entry,
-                        score =
-                            score
-                    )
-                }
-            }
-
-    /*
-     * Ranking:
-     *
-     * 1. quality score
-     * 2. shorter application name
-     * 3. locale-aware alphabetical order
-     */
-    val comparator =
-        Comparator<RankedSearchResult> {
-                first,
-                second ->
-
-            when {
-
-                first.score !=
-                    second.score -> {
-
-                    first.score
-                        .compareTo(
-                            second.score
-                        )
-                }
-
-                first.entry
-                    .normalizedLabel
-                    .length !=
-                    second.entry
-                        .normalizedLabel
-                        .length -> {
-
-                    first.entry
-                        .normalizedLabel
-                        .length
-                        .compareTo(
-                            second.entry
-                                .normalizedLabel
-                                .length
-                        )
-                }
-
-                else -> {
-
-                    collator.compare(
-                        first.entry
-                            .app
-                            .label,
-                        second.entry
-                            .app
-                            .label
-                    )
-                }
-            }
-        }
-
-    return rankedResults
-        .sortedWith(
-            comparator
-        )
-        .map { rankedResult ->
-
-            rankedResult
-                .entry
-                .app
-        }
-}
-
-private fun searchScore(
-    entry: SearchIndexEntry,
-    query: String
-): Int? {
-
-    val compactQuery =
-        query.replace(
-            " ",
-            ""
-        )
-
-    return when {
-
-        /*
-         * Exact application name.
-         *
-         * spotify -> Spotify
-         */
-        entry.normalizedLabel ==
-            query -> 0
-
-        /*
-         * Known alias.
-         *
-         * wsp -> WhatsApp
-         * ds  -> Discord
-         * gpt -> ChatGPT
-         */
-        entry.aliases
-            .contains(
-                compactQuery
-            ) -> 1
-
-        /*
-         * Automatic acronym.
-         *
-         * gm -> Google Maps
-         * sn -> Samsung Notes
-         */
-        entry.acronym
-            .isNotEmpty() &&
-            entry.acronym ==
-            compactQuery -> 1
-
-        /*
-         * Application name starts with query.
-         *
-         * spo -> Spotify
-         */
-        entry.normalizedLabel
-            .startsWith(
-                query
-            ) -> 2
-
-        /*
-         * A word starts with query.
-         *
-         * notes -> Samsung Notes
-         */
-        entry.normalizedWords
-            .any { word ->
-
-                word.startsWith(
-                    query
-                )
-            } -> 3
-
-        /*
-         * Partial alias.
-         *
-         * ws -> WhatsApp
-         */
-        compactQuery.length >= 2 &&
-            entry.aliases
-                .any { alias ->
-
-                    alias.startsWith(
-                        compactQuery
-                    )
-                } -> 4
-
-        /*
-         * Partial automatic acronym.
-         */
-        compactQuery.length >= 2 &&
-            entry.acronym
-                .isNotEmpty() &&
-            entry.acronym
-                .startsWith(
-                    compactQuery
-                ) -> 4
-
-        /*
-         * Last fallback:
-         *
-         * query appears somewhere inside the name.
-         */
-        entry.normalizedLabel
-            .contains(
-                query
-            ) -> 5
-
-        else ->
-            null
-    }
-}
-
-private fun splitSearchWords(
-    normalizedLabel: String
-): List<String> {
-
-    return normalizedLabel
-        .split(
-            Regex(
-                "[^\\p{L}\\p{N}]+"
-            )
-        )
-        .filter {
-            it.isNotBlank()
-        }
-}
-
-private fun buildAcronym(
-    words: List<String>
-): String {
-
-    if (
-        words.size < 2
-    ) {
-        return ""
-    }
-
-    return words
-        .mapNotNull { word ->
-            word.firstOrNull()
-        }
-        .joinToString(
-            separator = ""
-        )
-}
-
-private fun searchAliasesFor(
-    normalizedLabel: String
-): Set<String> {
-
-    return when {
-
-        normalizedLabel
-            .startsWith(
-                "whatsapp"
-            ) -> {
-
-            setOf(
-                "wsp",
-                "ws",
-                "wa",
-                "wpp"
-            )
-        }
-
-        normalizedLabel
-            .startsWith(
-                "discord"
-            ) -> {
-
-            setOf(
-                "ds",
-                "dc"
-            )
-        }
-
-        normalizedLabel
-            .startsWith(
-                "instagram"
-            ) -> {
-
-            setOf(
-                "ig"
-            )
-        }
-
-        normalizedLabel
-            .startsWith(
-                "youtube"
-            ) -> {
-
-            setOf(
-                "yt"
-            )
-        }
-
-        normalizedLabel
-            .startsWith(
-                "telegram"
-            ) -> {
-
-            setOf(
-                "tg"
-            )
-        }
-
-        normalizedLabel
-            .startsWith(
-                "chatgpt"
-            ) -> {
-
-            setOf(
-                "gpt"
-            )
-        }
-
-        else ->
-            emptySet()
-    }
-}
-
-private fun normalizeSearchText(
-    value: String
-): String {
-
-    return Normalizer
-        .normalize(
-            value,
-            Normalizer.Form.NFD
-        )
-        .replace(
-            Regex("\\p{Mn}+"),
-            ""
-        )
-        .lowercase(
-            Locale.getDefault()
-        )
-        .trim()
-}
-
 private fun Context.findActivity():
     Activity? {
 
@@ -1459,8 +994,7 @@ private fun Context.findActivity():
     ) {
 
         if (
-            currentContext is
-                Activity
+            currentContext is Activity
         ) {
             return currentContext
         }
@@ -1482,20 +1016,14 @@ private fun appKey(
 }
 
 /*
- * ============================================================
- * AUTOMATION TAGS
- * ============================================================
- *
- * These strings are intentionally stable.
- *
- * BaselineProfileGenerator will use them through UI Automator.
+ * Stable automation identifiers used by
+ * BaselineProfileGenerator.
  */
+private const val SEARCH_ROOT_TAG =
+    "launcher_search_root"
 
 private const val SEARCH_FIELD_TAG =
     "launcher_search_field"
 
 private const val SEARCH_RESULT_TAG_PREFIX =
     "launcher_search_result_"
-
-private const val SEARCH_ROOT_TAG =
-    "launcher_search_root"

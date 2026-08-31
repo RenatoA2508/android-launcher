@@ -68,14 +68,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.search.AppSearchEngine
 import com.renato.launcher.ui.components.LauncherSearchBar
 import com.renato.launcher.ui.components.LauncherSearchLauncher
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.text.Normalizer
-import java.util.Locale
 
 @Composable
 fun FavoritePickerScreen(
@@ -87,34 +86,56 @@ fun FavoritePickerScreen(
     FavoritePickerWindowEffect()
 
     /*
-     * Preload all application icons once.
+     * Shared process-wide icon cache.
      *
-     * From this point onward the picker should
-     * reuse the shared launcher icon cache instead
-     * of performing Drawable -> Bitmap conversion
-     * while scrolling.
+     * No app item in this screen performs its own
+     * Drawable -> Bitmap conversion.
      */
     PreloadLauncherAppIcons(
-        apps = apps
+        apps =
+            apps
     )
+
+    /*
+     * Shared search engine.
+     *
+     * This is exactly the same implementation used
+     * by SearchScreen.
+     */
+    val searchEngine =
+        remember(apps) {
+            AppSearchEngine(
+                apps =
+                    apps
+            )
+        }
 
     val selectedApps =
         remember(initialSelection) {
-            mutableStateListOf<InstalledApp>().apply {
-                addAll(initialSelection)
-            }
+            mutableStateListOf<InstalledApp>()
+                .apply {
+                    addAll(
+                        initialSelection
+                    )
+                }
         }
 
     var searchMode by remember {
-        mutableStateOf(false)
+        mutableStateOf(
+            false
+        )
     }
 
     var searchQuery by remember {
-        mutableStateOf("")
+        mutableStateOf(
+            ""
+        )
     }
 
     var searchExitPending by remember {
-        mutableStateOf(false)
+        mutableStateOf(
+            false
+        )
     }
 
     val normalGridState =
@@ -138,8 +159,7 @@ fun FavoritePickerScreen(
         rememberCoroutineScope()
 
     /*
-     * Create a stable snapshot for the current
-     * composition.
+     * Stable selection snapshot for this composition.
      */
     val selectedSnapshot =
         selectedApps.toList()
@@ -147,173 +167,196 @@ fun FavoritePickerScreen(
     /*
      * Fast lookup:
      *
-     * app -> Home position
-     *
-     * Instead of calling indexOfFirst() for every
-     * visible item while scrolling.
+     * AppKey -> position on Home
      */
     val selectionPositions =
-        remember(selectedSnapshot) {
+        remember(
             selectedSnapshot
-                .mapIndexed { index, app ->
-                    appKey(app) to (index + 1)
+        ) {
+
+            selectedSnapshot
+                .mapIndexed {
+                        index,
+                        app ->
+
+                    appKey(app) to
+                        (index + 1)
                 }
                 .toMap()
         }
 
     /*
-     * Search filtering.
+     * ============================================================
+     * SHARED RANKING
+     * ============================================================
      *
-     * This picker does not need the advanced
-     * ranking engine from the main Search screen.
-     * Here the goal is simply finding an app
-     * quickly while configuring favorites.
+     * This replaces the old Favorite Picker substring filter.
+     *
+     * Favorite search now understands exactly the same things as
+     * main Search:
+     *
+     * wsp -> WhatsApp
+     * ds  -> Discord
+     * gm  -> Google Maps
+     * sn  -> Samsung Notes
+     *
+     * plus exact matches, starts-with, word matches and contains.
      */
     val filteredApps =
         remember(
-            apps,
+            searchEngine,
             searchQuery
         ) {
-            if (searchQuery.isBlank()) {
-                apps
-            } else {
-                val normalizedQuery =
-                    normalizeSearchText(
-                        searchQuery
-                    )
 
-                apps.filter { app ->
-                    normalizeSearchText(
-                        app.label
-                    ).contains(
-                        normalizedQuery
-                    )
-                }
+            if (
+                searchQuery.isBlank()
+            ) {
+
+                apps
+
+            } else {
+
+                searchEngine.search(
+                    query =
+                        searchQuery
+                )
             }
         }
 
     fun exitSearch() {
-        if (searchExitPending) {
+
+        if (
+            searchExitPending
+        ) {
             return
         }
 
-        searchExitPending = true
+        searchExitPending =
+            true
 
-        /*
-         * Let the Samsung keyboard begin closing
-         * before rebuilding the normal picker UI.
-         *
-         * We already tested this approach and it
-         * produces a smoother Search -> Favorites
-         * transition.
-         */
-        keyboardController?.hide()
-        focusManager.clearFocus()
+        keyboardController
+            ?.hide()
+
+        focusManager
+            .clearFocus()
 
         coroutineScope.launch {
 
-            delay(100)
+            delay(
+                100
+            )
 
-            searchMode = false
-            searchQuery = ""
+            searchMode =
+                false
 
-            searchExitPending = false
+            searchQuery =
+                ""
+
+            searchExitPending =
+                false
         }
     }
 
     BackHandler(
-        enabled = searchMode
+        enabled =
+            searchMode
     ) {
         exitSearch()
     }
 
     /*
-     * Search opens in stages:
-     *
-     * frame 1 -> Search UI
-     * frame 2 -> focus
-     * frame 3 -> keyboard
-     *
-     * This avoids asking Compose + focus + IME
-     * to do all of the work in one frame.
+     * Search opens over several frames for smoother
+     * keyboard presentation.
      */
-    LaunchedEffect(searchMode) {
-        if (searchMode) {
+    LaunchedEffect(
+        searchMode
+    ) {
+
+        if (
+            searchMode
+        ) {
 
             withFrameNanos { }
 
-            focusRequester.requestFocus()
+            focusRequester
+                .requestFocus()
 
             withFrameNanos { }
 
-            keyboardController?.show()
+            keyboardController
+                ?.show()
         }
     }
 
     /*
-     * If we were scrolled down in search results
-     * and the query changes, return to the top.
+     * New queries always begin at the top.
      */
-    LaunchedEffect(searchQuery) {
+    LaunchedEffect(
+        searchQuery
+    ) {
+
         if (
             searchMode &&
             (
-                searchGridState.firstVisibleItemIndex > 0 ||
-                    searchGridState.firstVisibleItemScrollOffset > 0
+                searchGridState
+                    .firstVisibleItemIndex > 0 ||
+                    searchGridState
+                        .firstVisibleItemScrollOffset > 0
                 )
         ) {
-            searchGridState.scrollToItem(0)
+
+            searchGridState
+                .scrollToItem(
+                    0
+                )
         }
     }
 
     Box(
         modifier =
-            Modifier.fillMaxSize()
+            Modifier
+                .fillMaxSize()
     ) {
+
         /*
-         * Translucent fallback.
-         *
-         * Android 12+ additionally receives real
-         * background blur from the Window effect.
+         * Translucent fallback behind the picker.
          */
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    MaterialTheme
-                        .colorScheme
-                        .surface
-                        .copy(
-                            alpha = 0.78f
-                        )
-                )
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        MaterialTheme
+                            .colorScheme
+                            .surface
+                            .copy(
+                                alpha =
+                                    0.78f
+                            )
+                    )
         )
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
         ) {
 
             /*
-             * FIXED HEADER
-             *
-             * Normal:
-             * Favoritas / Cancelar / Listo
-             *
-             * Search:
-             * Back / Search bar
-             *
-             * Neither scrolls away with the apps.
+             * Header stays fixed.
              */
-            if (searchMode) {
+            if (
+                searchMode
+            ) {
 
                 SearchHeader(
                     searchQuery =
                         searchQuery,
                     onSearchQueryChange = {
-                        searchQuery = it
+                        searchQuery =
+                            it
                     },
                     focusRequester =
                         focusRequester,
@@ -330,46 +373,50 @@ fun FavoritePickerScreen(
                     onCancel =
                         onCancel,
                     onSave = {
+
                         onSave(
-                            selectedApps.toList()
+                            selectedApps
+                                .toList()
                         )
                     }
                 )
             }
 
-            /*
-             * We preserve separate scroll positions
-             * for normal picker and search.
-             */
             LazyVerticalGrid(
                 columns =
-                    GridCells.Fixed(4),
-
+                    GridCells.Fixed(
+                        4
+                    ),
                 state =
-                    if (searchMode) {
+                    if (
+                        searchMode
+                    ) {
                         searchGridState
                     } else {
                         normalGridState
                     },
-
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .imePadding(),
-
+                modifier =
+                    Modifier
+                        .weight(
+                            1f
+                        )
+                        .fillMaxWidth()
+                        .imePadding(),
                 contentPadding =
                     PaddingValues(
-                        start = 20.dp,
-                        end = 20.dp,
-                        top = 8.dp,
-                        bottom = 24.dp
+                        start =
+                            20.dp,
+                        end =
+                            20.dp,
+                        top =
+                            8.dp,
+                        bottom =
+                            24.dp
                     ),
-
                 horizontalArrangement =
                     Arrangement.spacedBy(
                         8.dp
                     ),
-
                 verticalArrangement =
                     Arrangement.spacedBy(
                         8.dp
@@ -381,7 +428,9 @@ fun FavoritePickerScreen(
                  * NORMAL FAVORITES MODE
                  * =================================================
                  */
-                if (!searchMode) {
+                if (
+                    !searchMode
+                ) {
 
                     item(
                         key =
@@ -394,11 +443,13 @@ fun FavoritePickerScreen(
                             )
                         }
                     ) {
+
                         SelectedAppsHeading()
                     }
 
                     if (
-                        selectedSnapshot.isEmpty()
+                        selectedSnapshot
+                            .isEmpty()
                     ) {
 
                         item(
@@ -412,6 +463,7 @@ fun FavoritePickerScreen(
                                 )
                             }
                         ) {
+
                             EmptySelectionState()
                         }
 
@@ -421,8 +473,11 @@ fun FavoritePickerScreen(
                             items =
                                 selectedSnapshot,
                             key = { app ->
+
                                 "selected:" +
-                                    appKey(app)
+                                    appKey(
+                                        app
+                                    )
                             },
                             contentType = {
                                 "selected-app"
@@ -430,7 +485,9 @@ fun FavoritePickerScreen(
                         ) { app ->
 
                             val key =
-                                appKey(app)
+                                appKey(
+                                    app
+                                )
 
                             SelectedAppItem(
                                 app =
@@ -440,6 +497,7 @@ fun FavoritePickerScreen(
                                         key
                                     ] ?: 0,
                                 onRemove = {
+
                                     removeSelectedApp(
                                         selectedApps =
                                             selectedApps,
@@ -462,8 +520,10 @@ fun FavoritePickerScreen(
                             )
                         }
                     ) {
+
                         SearchLauncher(
                             onClick = {
+
                                 searchMode =
                                     true
                             }
@@ -481,12 +541,14 @@ fun FavoritePickerScreen(
                             )
                         }
                     ) {
+
                         Text(
                             text =
                                 "Todas las aplicaciones",
                             modifier =
                                 Modifier.padding(
-                                    top = 6.dp
+                                    top =
+                                        6.dp
                                 ),
                             fontSize =
                                 17.sp,
@@ -502,50 +564,63 @@ fun FavoritePickerScreen(
 
                 /*
                  * =================================================
-                 * SEARCH MODE
+                 * FAVORITES SEARCH MODE
                  * =================================================
                  */
-                if (searchMode) {
+                if (
+                    searchMode &&
+                    searchQuery.isNotBlank() &&
+                    filteredApps.isNotEmpty()
+                ) {
 
-                    if (
-                        searchQuery.isNotBlank()
-                    ) {
-                        item(
-                            key =
-                                "search-heading",
-                            contentType =
-                                "section",
-                            span = {
-                                GridItemSpan(
-                                    maxLineSpan
-                                )
-                            }
-                        ) {
-                            Text(
-                                text =
-                                    "Resultados",
-                                fontSize =
-                                    17.sp,
-                                fontWeight =
-                                    FontWeight.SemiBold,
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .onSurface
+                    item(
+                        key =
+                            "search-heading",
+                        contentType =
+                            "section",
+                        span = {
+                            GridItemSpan(
+                                maxLineSpan
                             )
                         }
+                    ) {
+
+                        Text(
+                            text =
+                                "Resultados",
+                            fontSize =
+                                17.sp,
+                            fontWeight =
+                                FontWeight.SemiBold,
+                            color =
+                                MaterialTheme
+                                    .colorScheme
+                                    .onSurface
+                        )
                     }
                 }
 
                 val displayedApps =
-                    if (searchMode) {
+                    if (
+                        searchMode
+                    ) {
+
+                        /*
+                         * Blank query preserves the complete
+                         * app catalog.
+                         *
+                         * Typed query uses AppSearchEngine.
+                         */
                         filteredApps
+
                     } else {
+
                         apps
                     }
 
                 if (
                     searchMode &&
+                    searchQuery.isNotBlank() &&
                     displayedApps.isEmpty()
                 ) {
 
@@ -560,6 +635,7 @@ fun FavoritePickerScreen(
                             )
                         }
                     ) {
+
                         Text(
                             text =
                                 "No encontramos ninguna aplicación con ese nombre.",
@@ -587,12 +663,22 @@ fun FavoritePickerScreen(
                         items =
                             displayedApps,
                         key = { app ->
-                            if (searchMode) {
+
+                            if (
+                                searchMode
+                            ) {
+
                                 "search:" +
-                                    appKey(app)
+                                    appKey(
+                                        app
+                                    )
+
                             } else {
+
                                 "all:" +
-                                    appKey(app)
+                                    appKey(
+                                        app
+                                    )
                             }
                         },
                         contentType = {
@@ -601,7 +687,9 @@ fun FavoritePickerScreen(
                     ) { app ->
 
                         val key =
-                            appKey(app)
+                            appKey(
+                                app
+                            )
 
                         AllAppsItem(
                             app =
@@ -611,6 +699,7 @@ fun FavoritePickerScreen(
                                     key
                                 ],
                             onToggle = {
+
                                 toggleSelection(
                                     selectedApps =
                                         selectedApps,
@@ -632,34 +721,44 @@ private fun PickerHeader(
     onCancel: () -> Unit,
     onSave: () -> Unit
 ) {
+
     Surface(
         modifier =
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth(),
         color =
             MaterialTheme
                 .colorScheme
                 .surface
                 .copy(
-                    alpha = 0.84f
+                    alpha =
+                        0.84f
                 )
     ) {
+
         Row(
             modifier =
                 Modifier.padding(
-                    start = 20.dp,
-                    end = 20.dp,
-                    top = 14.dp,
-                    bottom = 12.dp
+                    start =
+                        20.dp,
+                    end =
+                        20.dp,
+                    top =
+                        14.dp,
+                    bottom =
+                        12.dp
                 ),
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
+
             Column(
                 modifier =
                     Modifier.weight(
                         1f
                     )
             ) {
+
                 Text(
                     text =
                         "Favoritas",
@@ -725,33 +824,32 @@ private fun PickerHeader(
 @Composable
 private fun SearchHeader(
     searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
-    focusRequester: FocusRequester,
+    onSearchQueryChange:
+        (String) -> Unit,
+    focusRequester:
+        FocusRequester,
     onBack: () -> Unit
 ) {
+
     LauncherSearchBar(
         query =
             searchQuery,
-
         onQueryChange =
             onSearchQueryChange,
-
         focusRequester =
             focusRequester,
-
         onBack =
             onBack,
-
         onClear = {
-            onSearchQueryChange("")
+            onSearchQueryChange(
+                ""
+            )
         },
 
         /*
-         * In the Favorite Picker the keyboard's
-         * Go action intentionally does nothing.
-         *
-         * This screen selects apps; it does not
-         * launch them.
+         * Favorite Picker selects applications.
+         * The IME action therefore does not launch
+         * the first result.
          */
         onSubmit = {
         }
@@ -762,6 +860,7 @@ private fun SearchHeader(
 private fun SearchLauncher(
     onClick: () -> Unit
 ) {
+
     LauncherSearchLauncher(
         onClick =
             onClick
@@ -770,12 +869,15 @@ private fun SearchLauncher(
 
 @Composable
 private fun SelectedAppsHeading() {
+
     Column(
         modifier =
             Modifier.padding(
-                top = 6.dp
+                top =
+                    6.dp
             )
     ) {
+
         Text(
             text =
                 "Seleccionadas",
@@ -812,9 +914,11 @@ private fun SelectedAppsHeading() {
 
 @Composable
 private fun EmptySelectionState() {
+
     Surface(
         modifier =
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth(),
         shape =
             RoundedCornerShape(
                 24.dp
@@ -824,17 +928,21 @@ private fun EmptySelectionState() {
                 .colorScheme
                 .surfaceContainer
                 .copy(
-                    alpha = 0.78f
+                    alpha =
+                        0.78f
                 )
     ) {
+
         Text(
             text =
                 "Todavía no has seleccionado aplicaciones.\n" +
                     "Elige las que quieras tener en Inicio.",
             modifier =
                 Modifier.padding(
-                    horizontal = 24.dp,
-                    vertical = 18.dp
+                    horizontal =
+                        24.dp,
+                    vertical =
+                        18.dp
                 ),
             textAlign =
                 TextAlign.Center,
@@ -854,11 +962,7 @@ private fun SelectedAppItem(
     position: Int,
     onRemove: () -> Unit
 ) {
-    /*
-     * Shared launcher cache.
-     *
-     * No Drawable -> Bitmap conversion here.
-     */
+
     val iconBitmap =
         rememberLauncherAppIcon(
             app
@@ -878,37 +982,45 @@ private fun SelectedAppItem(
         )
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressScale(
-                interactionSource =
-                    interactionSource
-            )
-            .clip(shape)
-            .background(
-                MaterialTheme
-                    .colorScheme
-                    .primaryContainer
-                    .copy(
-                        alpha = 0.72f
-                    )
-            )
-            .clickable(
-                interactionSource =
-                    interactionSource,
-                indication =
-                    indication,
-                onClick =
-                    onRemove
-            )
-            .padding(
-                horizontal = 5.dp,
-                vertical = 9.dp
-            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .pressScale(
+                    interactionSource =
+                        interactionSource
+                )
+                .clip(
+                    shape
+                )
+                .background(
+                    MaterialTheme
+                        .colorScheme
+                        .primaryContainer
+                        .copy(
+                            alpha =
+                                0.72f
+                        )
+                )
+                .clickable(
+                    interactionSource =
+                        interactionSource,
+                    indication =
+                        indication,
+                    onClick =
+                        onRemove
+                )
+                .padding(
+                    horizontal =
+                        5.dp,
+                    vertical =
+                        9.dp
+                ),
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
+
         Box {
+
             Image(
                 bitmap =
                     iconBitmap,
@@ -940,7 +1052,8 @@ private fun SelectedAppItem(
         Text(
             text =
                 app.label,
-            maxLines = 1,
+            maxLines =
+                1,
             overflow =
                 TextOverflow.Ellipsis,
             textAlign =
@@ -963,9 +1076,7 @@ private fun AllAppsItem(
     selectionPosition: Int?,
     onToggle: () -> Unit
 ) {
-    /*
-     * Shared launcher cache.
-     */
+
     val iconBitmap =
         rememberLauncherAppIcon(
             app
@@ -988,41 +1099,54 @@ private fun AllAppsItem(
         )
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressScale(
-                interactionSource =
-                    interactionSource
-            )
-            .clip(shape)
-            .background(
-                if (isSelected) {
-                    MaterialTheme
-                        .colorScheme
-                        .primaryContainer
-                        .copy(
-                            alpha = 0.42f
-                        )
-                } else {
-                    Color.Transparent
-                }
-            )
-            .clickable(
-                interactionSource =
-                    interactionSource,
-                indication =
-                    indication,
-                onClick =
-                    onToggle
-            )
-            .padding(
-                horizontal = 3.dp,
-                vertical = 7.dp
-            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .pressScale(
+                    interactionSource =
+                        interactionSource
+                )
+                .clip(
+                    shape
+                )
+                .background(
+                    if (
+                        isSelected
+                    ) {
+
+                        MaterialTheme
+                            .colorScheme
+                            .primaryContainer
+                            .copy(
+                                alpha =
+                                    0.42f
+                            )
+
+                    } else {
+
+                        Color.Transparent
+                    }
+                )
+                .clickable(
+                    interactionSource =
+                        interactionSource,
+                    indication =
+                        indication,
+                    onClick =
+                        onToggle
+                )
+                .padding(
+                    horizontal =
+                        3.dp,
+                    vertical =
+                        7.dp
+                ),
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
+
         Box {
+
             Image(
                 bitmap =
                     iconBitmap,
@@ -1037,6 +1161,7 @@ private fun AllAppsItem(
             if (
                 selectionPosition != null
             ) {
+
                 PositionBadge(
                     position =
                         selectionPosition,
@@ -1058,7 +1183,8 @@ private fun AllAppsItem(
         Text(
             text =
                 app.label,
-            maxLines = 2,
+            maxLines =
+                2,
             overflow =
                 TextOverflow.Ellipsis,
             textAlign =
@@ -1068,7 +1194,9 @@ private fun AllAppsItem(
             lineHeight =
                 13.sp,
             fontWeight =
-                if (isSelected) {
+                if (
+                    isSelected
+                ) {
                     FontWeight.SemiBold
                 } else {
                     FontWeight.Normal
@@ -1087,6 +1215,7 @@ private fun PositionBadge(
     modifier: Modifier =
         Modifier
 ) {
+
     Surface(
         modifier =
             modifier.size(
@@ -1099,13 +1228,16 @@ private fun PositionBadge(
                 .colorScheme
                 .primary
     ) {
+
         Box(
             contentAlignment =
                 Alignment.Center
         ) {
+
             Text(
                 text =
-                    position.toString(),
+                    position
+                        .toString(),
                 fontSize =
                     11.sp,
                 fontWeight =
@@ -1124,6 +1256,7 @@ private fun AnimatedButton(
     text: String,
     onClick: () -> Unit
 ) {
+
     val interactionSource =
         remember {
             MutableInteractionSource()
@@ -1144,6 +1277,7 @@ private fun AnimatedButton(
                 20.dp
             )
     ) {
+
         Text(
             text =
                 text
@@ -1156,6 +1290,7 @@ private fun AnimatedTextButton(
     text: String,
     onClick: () -> Unit
 ) {
+
     val interactionSource =
         remember {
             MutableInteractionSource()
@@ -1172,6 +1307,7 @@ private fun AnimatedTextButton(
         interactionSource =
             interactionSource
     ) {
+
         Text(
             text =
                 text,
@@ -1184,47 +1320,52 @@ private fun AnimatedTextButton(
 @Composable
 private fun Modifier.pressScale(
     interactionSource:
-    MutableInteractionSource,
+        MutableInteractionSource,
     pressedScale: Float =
         0.965f
 ): Modifier {
 
     val isPressed by
-    interactionSource
-        .collectIsPressedAsState()
+        interactionSource
+            .collectIsPressedAsState()
 
     val scale by
-    animateFloatAsState(
-        targetValue =
-            if (isPressed) {
-                pressedScale
-            } else {
-                1f
-            },
-        animationSpec =
-            if (isPressed) {
+        animateFloatAsState(
+            targetValue =
+                if (
+                    isPressed
+                ) {
+                    pressedScale
+                } else {
+                    1f
+                },
+            animationSpec =
+                if (
+                    isPressed
+                ) {
 
-                tween(
-                    durationMillis =
-                        55,
-                    easing =
-                        FastOutSlowInEasing
-                )
+                    tween(
+                        durationMillis =
+                            55,
+                        easing =
+                            FastOutSlowInEasing
+                    )
 
-            } else {
+                } else {
 
-                spring(
-                    dampingRatio =
-                        0.82f,
-                    stiffness =
-                        900f
-                )
-            },
-        label =
-            "favoritePressScale"
-    )
+                    spring(
+                        dampingRatio =
+                            0.82f,
+                        stiffness =
+                            900f
+                    )
+                },
+            label =
+                "favoritePressScale"
+        )
 
     return graphicsLayer {
+
         scaleX =
             scale
 
@@ -1235,6 +1376,7 @@ private fun Modifier.pressScale(
 
 @Composable
 private fun FavoritePickerWindowEffect() {
+
     val context =
         LocalContext.current
 
@@ -1246,14 +1388,16 @@ private fun FavoritePickerWindowEffect() {
     DisposableEffect(
         activity
     ) {
+
         val window =
             activity?.window
 
         if (
             window != null &&
             Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.S
+                Build.VERSION_CODES.S
         ) {
+
             window.addFlags(
                 WindowManager
                     .LayoutParams
@@ -1277,8 +1421,9 @@ private fun FavoritePickerWindowEffect() {
             if (
                 window != null &&
                 Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.S
+                    Build.VERSION_CODES.S
             ) {
+
                 val attributes =
                     window.attributes
 
@@ -1302,65 +1447,67 @@ private fun FavoritePickerWindowEffect() {
 
 private fun toggleSelection(
     selectedApps:
-    MutableList<InstalledApp>,
+        MutableList<InstalledApp>,
     app: InstalledApp
 ) {
-    val index =
-        selectedApps.indexOfFirst {
-            isSameApp(
-                first = it,
-                second = app
-            )
-        }
 
-    if (index >= 0) {
-        selectedApps.removeAt(
-            index
-        )
+    val index =
+        selectedApps
+            .indexOfFirst {
+
+                isSameApp(
+                    first =
+                        it,
+                    second =
+                        app
+                )
+            }
+
+    if (
+        index >= 0
+    ) {
+
+        selectedApps
+            .removeAt(
+                index
+            )
+
     } else {
-        selectedApps.add(
-            app
-        )
+
+        selectedApps
+            .add(
+                app
+            )
     }
 }
 
 private fun removeSelectedApp(
     selectedApps:
-    MutableList<InstalledApp>,
+        MutableList<InstalledApp>,
     app: InstalledApp
 ) {
+
     val index =
-        selectedApps.indexOfFirst {
-            isSameApp(
-                first = it,
-                second = app
+        selectedApps
+            .indexOfFirst {
+
+                isSameApp(
+                    first =
+                        it,
+                    second =
+                        app
+                )
+            }
+
+    if (
+        index >= 0
+    ) {
+
+        selectedApps
+            .removeAt(
+                index
             )
-        }
-
-    if (index >= 0) {
-        selectedApps.removeAt(
-            index
-        )
     }
-}
-
-private fun normalizeSearchText(
-    value: String
-): String {
-
-    return Normalizer
-        .normalize(
-            value,
-            Normalizer.Form.NFD
-        )
-        .replace(
-            Regex("\\p{Mn}+"),
-            ""
-        )
-        .lowercase(
-            Locale.getDefault()
-        )
-        .trim()
 }
 
 private fun isSameApp(
@@ -1371,7 +1518,7 @@ private fun isSameApp(
     return first.componentName ==
         second.componentName &&
         first.user ==
-        second.user
+            second.user
 }
 
 private fun Context.findActivity():

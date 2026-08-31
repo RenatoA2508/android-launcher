@@ -3,9 +3,9 @@ package com.renato.launcher.home
 import android.text.format.DateFormat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,13 +18,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,9 +36,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,13 +52,13 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.ui.components.AppContextMenu
+import com.renato.launcher.ui.icons.rememberLauncherAppIcon
+import com.renato.launcher.ui.interactions.launcherAppCombinedClickable
+import com.renato.launcher.ui.interactions.launcherCombinedClickable
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
-import com.renato.launcher.ui.icons.rememberLauncherAppIcon
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -60,7 +68,10 @@ fun HomeScreen(
     onAppClick: (InstalledApp) -> Unit,
     onChooseFavorites: () -> Unit,
     onEditFavorites: () -> Unit,
-    onOpenSearch: () -> Unit
+    onOpenSearch: () -> Unit,
+    onAppInfo: (InstalledApp) -> Unit,
+    onRemoveFavorite: (InstalledApp) -> Unit,
+    onUninstallApp: (InstalledApp) -> Unit
 ) {
     val wallpaperTextColor =
         rememberWallpaperTextColor()
@@ -90,72 +101,79 @@ fun HomeScreen(
             Color.Transparent
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(
-                    onOpenSearch,
-                    swipeThresholdPx
-                ) {
-                    var totalVerticalDrag =
-                        0f
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(
+                        onOpenSearch,
+                        swipeThresholdPx
+                    ) {
+                        var totalVerticalDrag =
+                            0f
 
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            totalVerticalDrag =
-                                0f
-                        },
-                        onVerticalDrag = {
-                                change,
-                                dragAmount ->
+                        detectVerticalDragGestures(
+                            onDragStart = {
+                                totalVerticalDrag =
+                                    0f
+                            },
+                            onVerticalDrag = {
+                                    change,
+                                    dragAmount ->
 
-                            totalVerticalDrag +=
-                                dragAmount
+                                totalVerticalDrag +=
+                                    dragAmount
 
-                            /*
-                             * Consume only once this has
-                             * clearly become a vertical
-                             * swipe rather than a tap.
-                             */
-                            if (
-                                kotlin.math.abs(
-                                    totalVerticalDrag
-                                ) > 12f
-                            ) {
-                                change.consume()
+                                /*
+                                 * Consume only once this clearly
+                                 * becomes a vertical swipe. Normal
+                                 * taps and long presses remain
+                                 * available to the app item.
+                                 */
+                                if (
+                                    kotlin.math.abs(
+                                        totalVerticalDrag
+                                    ) > 12f
+                                ) {
+                                    change.consume()
+                                }
+                            },
+                            onDragEnd = {
+                                if (
+                                    totalVerticalDrag <=
+                                    -swipeThresholdPx
+                                ) {
+                                    onOpenSearch()
+                                }
+
+                                totalVerticalDrag =
+                                    0f
+                            },
+                            onDragCancel = {
+                                totalVerticalDrag =
+                                    0f
                             }
+                        )
+                    }
+                    .launcherCombinedClickable(
+                        onClick = {
+                            // Empty Home tap does nothing.
                         },
-                        onDragEnd = {
+                        onLongClickLabel =
+                            "Editar Favoritas",
+                        onLongClick = {
                             if (
-                                totalVerticalDrag <=
-                                -swipeThresholdPx
+                                favoritesLoaded
                             ) {
-                                onOpenSearch()
+                                onEditFavorites()
                             }
-
-                            totalVerticalDrag =
-                                0f
-                        },
-                        onDragCancel = {
-                            totalVerticalDrag =
-                                0f
                         }
                     )
-                }
-                .combinedClickable(
-                    onClick = {
-                        // Empty Home tap does nothing.
-                    },
-                    onLongClick = {
-                        if (favoritesLoaded) {
-                            onEditFavorites()
-                        }
-                    }
-                )
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(
-                    horizontal = 24.dp
-                )
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(
+                        horizontal =
+                            24.dp
+                    )
         ) {
             Spacer(
                 modifier =
@@ -192,6 +210,12 @@ fun HomeScreen(
                         favoriteApps,
                     onAppClick =
                         onAppClick,
+                    onAppInfo =
+                        onAppInfo,
+                    onRemoveFavorite =
+                        onRemoveFavorite,
+                    onUninstallApp =
+                        onUninstallApp,
                     textColor =
                         wallpaperTextColor
                 )
@@ -390,6 +414,9 @@ private fun ClockHeader(
 private fun FavoriteAppsGrid(
     apps: List<InstalledApp>,
     onAppClick: (InstalledApp) -> Unit,
+    onAppInfo: (InstalledApp) -> Unit,
+    onRemoveFavorite: (InstalledApp) -> Unit,
+    onUninstallApp: (InstalledApp) -> Unit,
     textColor: Color
 ) {
     Column(
@@ -399,8 +426,11 @@ private fun FavoriteAppsGrid(
             )
     ) {
         apps
-            .chunked(2)
-            .forEach { rowApps ->
+            .chunked(
+                2
+            )
+            .forEach {
+                    rowApps ->
 
                 Row(
                     modifier =
@@ -415,9 +445,25 @@ private fun FavoriteAppsGrid(
                             app ->
 
                         FavoriteAppItem(
-                            app = app,
+                            app =
+                                app,
                             onClick = {
                                 onAppClick(
+                                    app
+                                )
+                            },
+                            onAppInfo = {
+                                onAppInfo(
+                                    app
+                                )
+                            },
+                            onRemoveFavorite = {
+                                onRemoveFavorite(
+                                    app
+                                )
+                            },
+                            onUninstallApp = {
+                                onUninstallApp(
                                     app
                                 )
                             },
@@ -452,6 +498,9 @@ private fun FavoriteAppsGrid(
 private fun FavoriteAppItem(
     app: InstalledApp,
     onClick: () -> Unit,
+    onAppInfo: () -> Unit,
+    onRemoveFavorite: () -> Unit,
+    onUninstallApp: () -> Unit,
     textColor: Color,
     modifier: Modifier =
         Modifier
@@ -461,65 +510,137 @@ private fun FavoriteAppItem(
             app
         )
 
-    Row(
-        modifier = modifier
-            .heightIn(
-                min = 52.dp
+    val hapticFeedback =
+        LocalHapticFeedback.current
+
+    var menuExpanded by
+        remember(
+            app.componentName,
+            app.user
+        ) {
+            mutableStateOf(
+                false
             )
-            .combinedClickable(
-                onClick =
-                    onClick,
-                onLongClick = {
-                    /*
-                     * App-specific context
-                     * actions will come later.
-                     */
-                }
-            )
-            .padding(
-                horizontal = 4.dp,
-                vertical = 6.dp
-            ),
-        verticalAlignment =
-            Alignment.CenterVertically
+        }
+
+    val itemShape =
+        RoundedCornerShape(
+            18.dp
+        )
+
+    /*
+     * The Box anchors the floating menu to this app.
+     */
+    Box(
+        modifier =
+            modifier
     ) {
-        Image(
-            bitmap =
-                iconBitmap,
-            contentDescription =
-                app.label,
+        Row(
             modifier =
-                Modifier.size(
-                    30.dp
-                )
-        )
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(
+                        min =
+                            52.dp
+                    )
+                    .launcherAppCombinedClickable(
+                        shape =
+                            itemShape,
+                        onClickLabel =
+                            "Abrir ${app.label}",
+                        onLongClickLabel =
+                            "Opciones de ${app.label}",
+                        onLongClick = {
+                            hapticFeedback
+                                .performHapticFeedback(
+                                    HapticFeedbackType.LongPress
+                                )
 
-        Spacer(
-            modifier =
-                Modifier.width(
-                    10.dp
-                )
-        )
+                            menuExpanded =
+                                true
+                        },
+                        onClick =
+                            onClick
+                    )
+                    .padding(
+                        horizontal =
+                            4.dp,
+                        vertical =
+                            6.dp
+                    ),
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+            Image(
+                bitmap =
+                    iconBitmap,
+                contentDescription =
+                    app.label,
+                modifier =
+                    Modifier.size(
+                        30.dp
+                    )
+            )
 
-        Text(
-            text =
-                app.label,
-            modifier =
-                Modifier.weight(
-                    1f
-                ),
-            style =
-                wallpaperTextStyle(
-                    color =
-                        textColor,
-                    fontSize =
-                        15.sp,
-                    fontWeight =
-                        FontWeight.Normal
-                ),
-            maxLines = 1,
-            overflow =
-                TextOverflow.Ellipsis
+            Spacer(
+                modifier =
+                    Modifier.width(
+                        10.dp
+                    )
+            )
+
+            Text(
+                text =
+                    app.label,
+                modifier =
+                    Modifier.weight(
+                        1f
+                    ),
+                style =
+                    wallpaperTextStyle(
+                        color =
+                            textColor,
+                        fontSize =
+                            15.sp,
+                        fontWeight =
+                            FontWeight.Normal
+                    ),
+                maxLines =
+                    1,
+                overflow =
+                    TextOverflow.Ellipsis
+            )
+        }
+
+        AppContextMenu(
+            expanded =
+                menuExpanded,
+            app =
+                app,
+            showRemoveFromHome =
+                true,
+            onDismiss = {
+                menuExpanded =
+                    false
+            },
+            onAppInfo = {
+                menuExpanded =
+                    false
+
+                onAppInfo()
+            },
+            onRemoveFavorite = {
+                menuExpanded =
+                    false
+
+                onRemoveFavorite()
+            },
+            onUninstallApp = {
+                menuExpanded =
+                    false
+
+                onUninstallApp()
+            }
         )
     }
 }
@@ -529,24 +650,27 @@ private fun wallpaperTextStyle(
     fontSize: TextUnit,
     fontWeight: FontWeight
 ): TextStyle {
-
     val shadowColor =
         if (
             color.luminance() >
             0.5f
         ) {
             Color.Black.copy(
-                alpha = 0.45f
+                alpha =
+                    0.45f
             )
         } else {
             Color.White.copy(
-                alpha = 0.35f
+                alpha =
+                    0.35f
             )
         }
 
     return TextStyle(
-        color = color,
-        fontSize = fontSize,
+        color =
+            color,
+        fontSize =
+            fontSize,
         fontWeight =
             fontWeight,
         shadow =
@@ -555,13 +679,17 @@ private fun wallpaperTextStyle(
                     shadowColor,
                 offset =
                     Offset(
-                        x = 0f,
-                        y = 1f
+                        x =
+                            0f,
+                        y =
+                            1f
                     ),
-                blurRadius = 3f
+                blurRadius =
+                    3f
             )
     )
 }
 
 private const val HOME_ROOT_TAG =
     "launcher_home_root"
+

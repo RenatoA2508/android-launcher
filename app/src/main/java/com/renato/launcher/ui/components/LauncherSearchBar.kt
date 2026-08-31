@@ -1,12 +1,5 @@
 package com.renato.launcher.ui.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,18 +14,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.testTag
+import com.renato.launcher.ui.interactions.launcherClickable
 
 @Composable
 fun LauncherSearchBar(
@@ -67,7 +58,8 @@ fun LauncherSearchBar(
                 Alignment.CenterVertically
         ) {
             SearchBackButton(
-                onClick = onBack
+                onClick =
+                    onBack
             )
 
             Spacer(
@@ -78,17 +70,22 @@ fun LauncherSearchBar(
             )
 
             OutlinedTextField(
-                value = query,
+                value =
+                    query,
                 onValueChange =
                     onQueryChange,
                 modifier =
                     Modifier
-                        .weight(1f)
+                        .weight(
+                            1f
+                        )
                         .focusRequester(
                             focusRequester
                         )
                         .then(
-                            if (fieldTestTag != null) {
+                            if (
+                                fieldTestTag != null
+                            ) {
                                 Modifier.testTag(
                                     fieldTestTag
                                 )
@@ -98,18 +95,23 @@ fun LauncherSearchBar(
                         ),
                 placeholder = {
                     Text(
-                        "Buscar aplicaciones"
+                        text =
+                            "Buscar aplicaciones"
                     )
                 },
                 trailingIcon = {
-                    if (query.isNotEmpty()) {
+                    if (
+                        query.isNotEmpty()
+                    ) {
                         TextButton(
                             onClick =
                                 onClear
                         ) {
                             Text(
-                                text = "×",
-                                fontSize = 22.sp
+                                text =
+                                    "×",
+                                fontSize =
+                                    22.sp
                             )
                         }
                     }
@@ -125,7 +127,8 @@ fun LauncherSearchBar(
                             onSubmit()
                         }
                     ),
-                singleLine = true,
+                singleLine =
+                    true,
                 shape =
                     RoundedCornerShape(
                         28.dp
@@ -139,36 +142,26 @@ fun LauncherSearchBar(
 fun LauncherSearchLauncher(
     onClick: () -> Unit
 ) {
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
+    val shape =
+        RoundedCornerShape(
+            28.dp
+        )
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressScale(
-                interactionSource =
-                    interactionSource,
-                pressedScale =
-                    0.98f
-            )
-            .clip(
-                RoundedCornerShape(
-                    28.dp
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(
+                    shape
                 )
-            )
-            .clickable(
-                interactionSource =
-                    interactionSource,
-                indication = null,
-                onClick =
-                    onClick
-            ),
+                .launcherClickable(
+                    onClickLabel =
+                        "Buscar aplicaciones",
+                    onClick =
+                        onClick
+                ),
         shape =
-            RoundedCornerShape(
-                28.dp
-            ),
+            shape,
         color =
             MaterialTheme
                 .colorScheme
@@ -185,7 +178,8 @@ fun LauncherSearchLauncher(
                     horizontal = 20.dp,
                     vertical = 16.dp
                 ),
-            fontSize = 16.sp,
+            fontSize =
+                16.sp,
             color =
                 MaterialTheme
                     .colorScheme
@@ -198,67 +192,19 @@ fun LauncherSearchLauncher(
 private fun SearchBackButton(
     onClick: () -> Unit
 ) {
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
+    /*
+     * TextButton already uses Material's ripple indication,
+     * so no custom press-scale animation is needed.
+     */
     TextButton(
         onClick =
-            onClick,
-        interactionSource =
-            interactionSource,
-        modifier =
-            Modifier.pressScale(
-                interactionSource =
-                    interactionSource
-            )
+            onClick
     ) {
         Text(
-            text = "‹",
-            fontSize = 32.sp
+            text =
+                "‹",
+            fontSize =
+                32.sp
         )
-    }
-}
-
-@Composable
-private fun Modifier.pressScale(
-    interactionSource:
-        MutableInteractionSource,
-    pressedScale: Float = 0.965f
-): Modifier {
-
-    val isPressed by
-        interactionSource
-            .collectIsPressedAsState()
-
-    val scale by
-        animateFloatAsState(
-            targetValue =
-                if (isPressed) {
-                    pressedScale
-                } else {
-                    1f
-                },
-            animationSpec =
-                if (isPressed) {
-                    tween(
-                        durationMillis = 55,
-                        easing =
-                            FastOutSlowInEasing
-                    )
-                } else {
-                    spring(
-                        dampingRatio = 0.82f,
-                        stiffness = 900f
-                    )
-                },
-            label =
-                "launcherSearchPressScale"
-        )
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
     }
 }

@@ -6,16 +6,9 @@ import android.content.ContextWrapper
 import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -47,17 +40,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -68,19 +61,25 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.ui.components.AppContextMenu
 import com.renato.launcher.ui.components.LauncherSearchBar
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
+import com.renato.launcher.ui.interactions.launcherAppCombinedClickable
 
 @Composable
 fun SearchScreen(
     apps: List<InstalledApp>,
     recentApps: List<InstalledApp>,
     recentSearchApps: List<InstalledApp>,
+    favoriteApps: List<InstalledApp>,
     onAppClick: (
         InstalledApp,
         Boolean
     ) -> Unit,
+    onAppInfo: (InstalledApp) -> Unit,
+    onRemoveFavorite: (InstalledApp) -> Unit,
+    onUninstallApp: (InstalledApp) -> Unit,
     onBack: () -> Unit
 ) {
     SearchWindowEffect()
@@ -140,6 +139,20 @@ fun SearchScreen(
                 query =
                     query
             )
+        }
+
+    val favoriteAppKeys =
+        remember(
+            favoriteApps
+        ) {
+            favoriteApps
+                .mapTo(
+                    HashSet()
+                ) { app ->
+                    appKey(
+                        app
+                    )
+                }
         }
 
     /*
@@ -494,11 +507,28 @@ fun SearchScreen(
                                 SearchAppItem(
                                     app =
                                         app,
+                                    isFavorite =
+                                        appKey(app) in
+                                            favoriteAppKeys,
                                     onClick = {
-
                                         onAppClick(
                                             app,
                                             false
+                                        )
+                                    },
+                                    onAppInfo = {
+                                        onAppInfo(
+                                            app
+                                        )
+                                    },
+                                    onRemoveFavorite = {
+                                        onRemoveFavorite(
+                                            app
+                                        )
+                                    },
+                                    onUninstallApp = {
+                                        onUninstallApp(
+                                            app
                                         )
                                     }
                                 )
@@ -549,11 +579,28 @@ fun SearchScreen(
                                 SearchAppItem(
                                     app =
                                         app,
+                                    isFavorite =
+                                        appKey(app) in
+                                            favoriteAppKeys,
                                     onClick = {
-
                                         onAppClick(
                                             app,
                                             true
+                                        )
+                                    },
+                                    onAppInfo = {
+                                        onAppInfo(
+                                            app
+                                        )
+                                    },
+                                    onRemoveFavorite = {
+                                        onRemoveFavorite(
+                                            app
+                                        )
+                                    },
+                                    onUninstallApp = {
+                                        onUninstallApp(
+                                            app
                                         )
                                     }
                                 )
@@ -628,11 +675,28 @@ fun SearchScreen(
                                 app,
                             testTag =
                                 "$SEARCH_RESULT_TAG_PREFIX$index",
+                            isFavorite =
+                                appKey(app) in
+                                    favoriteAppKeys,
                             onClick = {
-
                                 onAppClick(
                                     app,
                                     true
+                                )
+                            },
+                            onAppInfo = {
+                                onAppInfo(
+                                    app
+                                )
+                            },
+                            onRemoveFavorite = {
+                                onRemoveFavorite(
+                                    app
+                                )
+                            },
+                            onUninstallApp = {
+                                onUninstallApp(
+                                    app
                                 )
                             }
                         )
@@ -758,156 +822,155 @@ private fun NoResultsState(
 private fun SearchAppItem(
     app: InstalledApp,
     testTag: String? = null,
-    onClick: () -> Unit
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    onAppInfo: () -> Unit,
+    onRemoveFavorite: () -> Unit,
+    onUninstallApp: () -> Unit
 ) {
-
     val iconBitmap =
         rememberLauncherAppIcon(
             app
         )
 
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
+    val hapticFeedback =
+        LocalHapticFeedback.current
+
+    var menuExpanded by
+        remember(
+            app.componentName,
+            app.user
+        ) {
+            mutableStateOf(
+                false
+            )
         }
 
-    val indication =
-        LocalIndication.current
+    /*
+     * Search tiles are intentionally a little squarer than Home.
+     * The pressed state illuminates this rounded rectangle instead
+     * of showing a circular spot in the middle of the cell.
+     */
+    val shape =
+        RoundedCornerShape(
+            14.dp
+        )
 
-    Column(
+    Box(
         modifier =
-            Modifier
-                .fillMaxWidth()
-                .then(
-                    if (
-                        testTag != null
-                    ) {
-
-                        Modifier.testTag(
-                            testTag
-                        )
-
-                    } else {
-
-                        Modifier
-                    }
-                )
-                .pressScale(
-                    interactionSource =
-                        interactionSource
-                )
-                .clip(
-                    RoundedCornerShape(
-                        18.dp
-                    )
-                )
-                .clickable(
-                    interactionSource =
-                        interactionSource,
-                    indication =
-                        indication,
-                    onClick =
-                        onClick
-                )
-                .padding(
-                    horizontal =
-                        3.dp,
-                    vertical =
-                        6.dp
-                ),
-        horizontalAlignment =
-            Alignment.CenterHorizontally
+            Modifier.fillMaxWidth()
     ) {
-
-        Image(
-            bitmap =
-                iconBitmap,
-            contentDescription =
-                app.label,
+        Column(
             modifier =
-                Modifier.size(
-                    44.dp
-                )
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    5.dp
-                )
-        )
-
-        Text(
-            text =
-                app.label,
-            maxLines =
-                2,
-            overflow =
-                TextOverflow.Ellipsis,
-            textAlign =
-                TextAlign.Center,
-            fontSize =
-                12.sp,
-            lineHeight =
-                13.sp,
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onSurface
-        )
-    }
-}
-
-@Composable
-private fun Modifier.pressScale(
-    interactionSource:
-        MutableInteractionSource,
-    pressedScale: Float =
-        0.965f
-): Modifier {
-
-    val isPressed by
-        interactionSource
-            .collectIsPressedAsState()
-
-    val scale by
-        animateFloatAsState(
-            targetValue =
-                if (isPressed) {
-                    pressedScale
-                } else {
-                    1f
-                },
-            animationSpec =
-                if (isPressed) {
-
-                    tween(
-                        durationMillis =
-                            55,
-                        easing =
-                            FastOutSlowInEasing
+                Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (
+                            testTag != null
+                        ) {
+                            Modifier.testTag(
+                                testTag
+                            )
+                        } else {
+                            Modifier
+                        }
                     )
+                    .launcherAppCombinedClickable(
+                        shape =
+                            shape,
+                        onClickLabel =
+                            "Abrir ${app.label}",
+                        onLongClickLabel =
+                            "Opciones de ${app.label}",
+                        onLongClick = {
+                            hapticFeedback
+                                .performHapticFeedback(
+                                    HapticFeedbackType.LongPress
+                                )
 
-                } else {
-
-                    spring(
-                        dampingRatio =
-                            0.82f,
-                        stiffness =
-                            900f
+                            menuExpanded =
+                                true
+                        },
+                        onClick =
+                            onClick
                     )
-                },
-            label =
-                "searchPressScale"
+                    .padding(
+                        horizontal =
+                            3.dp,
+                        vertical =
+                            6.dp
+                    ),
+            horizontalAlignment =
+                Alignment.CenterHorizontally
+        ) {
+            Image(
+                bitmap =
+                    iconBitmap,
+                contentDescription =
+                    app.label,
+                modifier =
+                    Modifier.size(
+                        44.dp
+                    )
+            )
+
+            Spacer(
+                modifier =
+                    Modifier.height(
+                        5.dp
+                    )
+            )
+
+            Text(
+                text =
+                    app.label,
+                maxLines =
+                    2,
+                overflow =
+                    TextOverflow.Ellipsis,
+                textAlign =
+                    TextAlign.Center,
+                fontSize =
+                    12.sp,
+                lineHeight =
+                    13.sp,
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .onSurface
+            )
+        }
+
+        AppContextMenu(
+            expanded =
+                menuExpanded,
+            app =
+                app,
+            showRemoveFromHome =
+                isFavorite,
+            onDismiss = {
+                menuExpanded =
+                    false
+            },
+            onAppInfo = {
+                menuExpanded =
+                    false
+
+                onAppInfo()
+            },
+            onRemoveFavorite = {
+                menuExpanded =
+                    false
+
+                onRemoveFavorite()
+            },
+            onUninstallApp = {
+                menuExpanded =
+                    false
+
+                onUninstallApp()
+            }
         )
-
-    return graphicsLayer {
-
-        scaleX =
-            scale
-
-        scaleY =
-            scale
     }
 }
 
@@ -1027,3 +1090,4 @@ private const val SEARCH_FIELD_TAG =
 
 private const val SEARCH_RESULT_TAG_PREFIX =
     "launcher_search_result_"
+

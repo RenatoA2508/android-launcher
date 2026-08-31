@@ -6,16 +6,8 @@ import android.content.ContextWrapper
 import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,7 +50,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -73,6 +64,7 @@ import com.renato.launcher.ui.components.LauncherSearchBar
 import com.renato.launcher.ui.components.LauncherSearchLauncher
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
+import com.renato.launcher.ui.interactions.launcherAppClickable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -962,19 +954,10 @@ private fun SelectedAppItem(
     position: Int,
     onRemove: () -> Unit
 ) {
-
     val iconBitmap =
         rememberLauncherAppIcon(
             app
         )
-
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
-    val indication =
-        LocalIndication.current
 
     val shape =
         RoundedCornerShape(
@@ -985,10 +968,6 @@ private fun SelectedAppItem(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .pressScale(
-                    interactionSource =
-                        interactionSource
-                )
                 .clip(
                     shape
                 )
@@ -1001,11 +980,9 @@ private fun SelectedAppItem(
                                 0.72f
                         )
                 )
-                .clickable(
-                    interactionSource =
-                        interactionSource,
-                    indication =
-                        indication,
+                .launcherAppClickable(
+                    onClickLabel =
+                        "Quitar ${app.label} de Favoritas",
                     onClick =
                         onRemove
                 )
@@ -1018,9 +995,7 @@ private fun SelectedAppItem(
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
-
         Box {
-
             Image(
                 bitmap =
                     iconBitmap,
@@ -1076,7 +1051,6 @@ private fun AllAppsItem(
     selectionPosition: Int?,
     onToggle: () -> Unit
 ) {
-
     val iconBitmap =
         rememberLauncherAppIcon(
             app
@@ -1084,14 +1058,6 @@ private fun AllAppsItem(
 
     val isSelected =
         selectionPosition != null
-
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
-    val indication =
-        LocalIndication.current
 
     val shape =
         RoundedCornerShape(
@@ -1102,10 +1068,6 @@ private fun AllAppsItem(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .pressScale(
-                    interactionSource =
-                        interactionSource
-                )
                 .clip(
                     shape
                 )
@@ -1113,7 +1075,6 @@ private fun AllAppsItem(
                     if (
                         isSelected
                     ) {
-
                         MaterialTheme
                             .colorScheme
                             .primaryContainer
@@ -1121,17 +1082,19 @@ private fun AllAppsItem(
                                 alpha =
                                     0.42f
                             )
-
                     } else {
-
                         Color.Transparent
                     }
                 )
-                .clickable(
-                    interactionSource =
-                        interactionSource,
-                    indication =
-                        indication,
+                .launcherAppClickable(
+                    onClickLabel =
+                        if (
+                            isSelected
+                        ) {
+                            "Quitar ${app.label} de Favoritas"
+                        } else {
+                            "Agregar ${app.label} a Favoritas"
+                        },
                     onClick =
                         onToggle
                 )
@@ -1144,9 +1107,7 @@ private fun AllAppsItem(
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
-
         Box {
-
             Image(
                 bitmap =
                     iconBitmap,
@@ -1161,7 +1122,6 @@ private fun AllAppsItem(
             if (
                 selectionPosition != null
             ) {
-
                 PositionBadge(
                     position =
                         selectionPosition,
@@ -1256,28 +1216,19 @@ private fun AnimatedButton(
     text: String,
     onClick: () -> Unit
 ) {
-
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
+    /*
+     * Material Button already provides the shared ripple
+     * feedback. The old press-scale animation is intentionally
+     * removed.
+     */
     Button(
         onClick =
             onClick,
-        modifier =
-            Modifier.pressScale(
-                interactionSource =
-                    interactionSource
-            ),
-        interactionSource =
-            interactionSource,
         shape =
             RoundedCornerShape(
                 20.dp
             )
     ) {
-
         Text(
             text =
                 text
@@ -1290,87 +1241,19 @@ private fun AnimatedTextButton(
     text: String,
     onClick: () -> Unit
 ) {
-
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
+    /*
+     * TextButton uses Material's ripple indication by default.
+     */
     TextButton(
         onClick =
-            onClick,
-        modifier =
-            Modifier.pressScale(
-                interactionSource =
-                    interactionSource
-            ),
-        interactionSource =
-            interactionSource
+            onClick
     ) {
-
         Text(
             text =
                 text,
             fontSize =
                 14.sp
         )
-    }
-}
-
-@Composable
-private fun Modifier.pressScale(
-    interactionSource:
-        MutableInteractionSource,
-    pressedScale: Float =
-        0.965f
-): Modifier {
-
-    val isPressed by
-        interactionSource
-            .collectIsPressedAsState()
-
-    val scale by
-        animateFloatAsState(
-            targetValue =
-                if (
-                    isPressed
-                ) {
-                    pressedScale
-                } else {
-                    1f
-                },
-            animationSpec =
-                if (
-                    isPressed
-                ) {
-
-                    tween(
-                        durationMillis =
-                            55,
-                        easing =
-                            FastOutSlowInEasing
-                    )
-
-                } else {
-
-                    spring(
-                        dampingRatio =
-                            0.82f,
-                        stiffness =
-                            900f
-                    )
-                },
-            label =
-                "favoritePressScale"
-        )
-
-    return graphicsLayer {
-
-        scaleX =
-            scale
-
-        scaleY =
-            scale
     }
 }
 
@@ -1553,3 +1436,4 @@ private fun appKey(
         app.componentName
             .flattenToString()
 }
+

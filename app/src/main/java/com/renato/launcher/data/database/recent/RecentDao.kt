@@ -1,0 +1,45 @@
+package com.renato.launcher.data.database.recent
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface RecentDao {
+
+    @Query(
+        """
+        SELECT *
+        FROM recent_apps
+        ORDER BY lastOpenedAt DESC
+        """
+    )
+    fun observeRecentApps():
+        Flow<List<RecentAppEntity>>
+
+    @Query(
+        """
+        SELECT *
+        FROM recent_searches
+        ORDER BY lastSearchedAt DESC
+        """
+    )
+    fun observeRecentSearches():
+        Flow<List<RecentSearchEntity>>
+
+    @Insert(
+        onConflict = OnConflictStrategy.REPLACE
+    )
+    suspend fun upsertRecentApp(
+        recentApp: RecentAppEntity
+    )
+
+    @Insert(
+        onConflict = OnConflictStrategy.REPLACE
+    )
+    suspend fun upsertRecentSearch(
+        recentSearch: RecentSearchEntity
+    )
+}

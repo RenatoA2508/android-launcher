@@ -33,6 +33,9 @@ import com.renato.launcher.search.SearchScreen
 import com.renato.launcher.ui.theme.LauncherTheme
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import com.renato.launcher.data.database.recent.RecentAppEntity
+import com.renato.launcher.data.database.recent.RecentSearchEntity
+import com.renato.launcher.recents.RecentRepository
 
 private enum class LauncherScreen {
     HOME,
@@ -95,6 +98,16 @@ class MainActivity :
                         )
                     }
 
+                val recentRepository =
+                    remember {
+                        RecentRepository(
+                            context =
+                                applicationContext,
+                            recentDao =
+                                database.recentDao()
+                        )
+                    }
+
                 val coroutineScope =
                     rememberCoroutineScope()
 
@@ -148,6 +161,24 @@ class MainActivity :
                         )
                     }
 
+                var savedRecentApps by
+                remember {
+                    mutableStateOf(
+                        emptyList<
+                            RecentAppEntity
+                            >()
+                    )
+                }
+
+                var savedRecentSearches by
+                remember {
+                    mutableStateOf(
+                        emptyList<
+                            RecentSearchEntity
+                            >()
+                    )
+                }
+
                 val homeRoleLauncher =
                     rememberLauncherForActivityResult(
                         contract =
@@ -194,6 +225,30 @@ class MainActivity :
                         }
                 }
 
+                LaunchedEffect(
+                    recentRepository
+                ) {
+                    launch {
+                        recentRepository
+                            .recentApps
+                            .collect { recentApps ->
+
+                                savedRecentApps =
+                                    recentApps
+                            }
+                    }
+
+                    launch {
+                        recentRepository
+                            .recentSearches
+                            .collect { recentSearches ->
+
+                                savedRecentSearches =
+                                    recentSearches
+                            }
+                    }
+                }
+
                 val favoriteApps =
                     remember(
                         savedFavorites,
@@ -203,6 +258,23 @@ class MainActivity :
                             .resolveFavorites(
                                 savedFavorites =
                                     savedFavorites,
+                                installedApps =
+                                    installedApps
+                            )
+                    }
+
+                val recentSections =
+                    remember(
+                        savedRecentApps,
+                        savedRecentSearches,
+                        installedApps
+                    ) {
+                        recentRepository
+                            .buildSections(
+                                savedRecentApps =
+                                    savedRecentApps,
+                                savedRecentSearches =
+                                    savedRecentSearches,
                                 installedApps =
                                     installedApps
                             )
@@ -222,8 +294,19 @@ class MainActivity :
                                 favoritesLoaded =
                                     installedAppsLoaded &&
                                         savedFavoritesLoaded,
-                                onAppClick =
-                                    appRepository::launch,
+                                onAppClick = { app ->
+
+                                    appRepository.launch(
+                                        app
+                                    )
+
+                                    coroutineScope.launch {
+                                        recentRepository
+                                            .recordLaunch(
+                                                app
+                                            )
+                                    }
+                                },
                                 onChooseFavorites = {
                                     currentScreen =
                                         LauncherScreen
@@ -273,34 +356,43 @@ class MainActivity :
                         }
 
                         LauncherScreen.SEARCH -> {
-
                             SearchScreen(
                                 apps =
                                     installedApps,
+                                recentApps =
+                                    recentSections.recentApps,
+                                recentSearchApps =
+                                    recentSections.searchedApps,
                                 onAppClick = {
-                                        app ->
+                                        app,
+                                        recordAsSearch ->
 
-                                    /*
-                                     * Reset launcher to Home
-                                     * BEFORE launching the app.
-                                     *
-                                     * Therefore pressing Home
-                                     * later returns to Home,
-                                     * not the previous Search.
-                                     */
                                     currentScreen =
-                                        LauncherScreen
-                                            .HOME
+                                        LauncherScreen.HOME
 
                                     appRepository
                                         .launch(
                                             app
                                         )
+
+                                    coroutineScope.launch {
+
+                                        recentRepository
+                                            .recordLaunch(
+                                                app
+                                            )
+
+                                        if (recordAsSearch) {
+                                            recentRepository
+                                                .recordSearchLaunch(
+                                                    app
+                                                )
+                                        }
+                                    }
                                 },
                                 onBack = {
                                     currentScreen =
-                                        LauncherScreen
-                                            .HOME
+                                        LauncherScreen.HOME
                                 }
                             )
                         }

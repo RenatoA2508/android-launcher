@@ -12,7 +12,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -35,7 +34,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -54,36 +56,38 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.renato.launcher.core.model.InstalledApp
+import java.text.Collator
 import java.text.Normalizer
 import java.util.Locale
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Velocity
 
 @Composable
 fun SearchScreen(
     apps: List<InstalledApp>,
-    onAppClick: (InstalledApp) -> Unit,
+    recentApps: List<InstalledApp>,
+    recentSearchApps: List<InstalledApp>,
+    onAppClick: (
+        InstalledApp,
+        Boolean
+    ) -> Unit,
     onBack: () -> Unit
 ) {
     SearchWindowEffect()
@@ -116,139 +120,184 @@ fun SearchScreen(
             }
         }
 
-    val results =
-        remember(
-            apps,
-            query
-        ) {
-            if (query.isBlank()) {
-                emptyList()
-            } else {
-                val normalizedQuery =
-                    normalizeSearchText(
-                        query
-                    )
+    /*
+     * Build the normalized search index only when
+     * the installed application list changes.
+     *
+     * We do NOT normalize every application again
+     * for every keyboard character.
+     */
+    val searchIndex =
+        remember(apps) {
+            apps.map { app ->
 
-                apps.filter { app ->
+                val normalizedLabel =
                     normalizeSearchText(
                         app.label
-                    ).contains(
-                        normalizedQuery
                     )
-                }
+
+                val words =
+                    splitSearchWords(
+                        normalizedLabel
+                    )
+
+                SearchIndexEntry(
+                    app = app,
+                    normalizedLabel =
+                        normalizedLabel,
+                    normalizedWords =
+                        words,
+                    acronym =
+                        buildAcronym(
+                            words
+                        ),
+                    aliases =
+                        searchAliasesFor(
+                            normalizedLabel
+                        )
+                )
             }
+        }
+
+    val collator =
+        remember {
+            Collator
+                .getInstance(
+                    Locale.getDefault()
+                )
+                .apply {
+                    strength =
+                        Collator.PRIMARY
+                }
+        }
+
+    val results =
+        remember(
+            searchIndex,
+            query
+        ) {
+            rankSearchResults(
+                searchIndex =
+                    searchIndex,
+                query =
+                    query,
+                collator =
+                    collator
+            )
         }
 
     fun closeSearch() {
         keyboardController?.hide()
         focusManager.clearFocus()
+
         onBack()
     }
 
     val swipeDownConnection =
-    remember(
-        gridState,
-        swipeDownThresholdPx,
-        keyboardController,
-        focusManager,
-        onBack
-    ) {
-        object :
-            NestedScrollConnection {
+        remember(
+            gridState,
+            swipeDownThresholdPx,
+            keyboardController,
+            focusManager,
+            onBack
+        ) {
+            object :
+                NestedScrollConnection {
 
-            var accumulatedDownwardDrag =
-                0f
+                var accumulatedDownwardDrag =
+                    0f
 
-            var closeTriggered =
-                false
+                var closeTriggered =
+                    false
 
-            override fun onPreScroll(
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
+                override fun onPreScroll(
+                    available: Offset,
+                    source: NestedScrollSource
+                ): Offset {
 
-                val isAtTop =
-                    gridState
-                        .firstVisibleItemIndex == 0 &&
+                    val isAtTop =
                         gridState
-                            .firstVisibleItemScrollOffset == 0
-
-                /*
-                 * Finger moving downward while
-                 * the list is already at the top.
-                 */
-                if (
-                    source ==
-                        NestedScrollSource.UserInput &&
-                    isAtTop &&
-                    available.y > 0f
-                ) {
-
-                    accumulatedDownwardDrag +=
-                        available.y
+                            .firstVisibleItemIndex == 0 &&
+                            gridState
+                                .firstVisibleItemScrollOffset == 0
 
                     if (
-                        !closeTriggered &&
-                        accumulatedDownwardDrag >=
-                            swipeDownThresholdPx
+                        source ==
+                        NestedScrollSource.UserInput &&
+                        isAtTop &&
+                        available.y > 0f
                     ) {
-                        closeTriggered = true
 
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
+                        accumulatedDownwardDrag +=
+                            available.y
 
-                        onBack()
+                        if (
+                            !closeTriggered &&
+                            accumulatedDownwardDrag >=
+                            swipeDownThresholdPx
+                        ) {
+                            closeTriggered =
+                                true
+
+                            keyboardController
+                                ?.hide()
+
+                            focusManager
+                                .clearFocus()
+
+                            onBack()
+                        }
+
+                    } else if (
+                        available.y < 0f ||
+                        !isAtTop
+                    ) {
+
+                        accumulatedDownwardDrag =
+                            0f
+
+                        closeTriggered =
+                            false
                     }
 
-                } else if (
-                    available.y < 0f ||
-                    !isAtTop
-                ) {
+                    /*
+                     * Observe the gesture without
+                     * stealing scrolling from the grid.
+                     */
+                    return Offset.Zero
+                }
+
+                override suspend fun onPreFling(
+                    available: Velocity
+                ): Velocity {
+
                     accumulatedDownwardDrag =
                         0f
 
                     closeTriggered =
                         false
+
+                    return Velocity.Zero
                 }
-
-                /*
-                 * We observe the movement but do not
-                 * consume it.
-                 *
-                 * LazyVerticalGrid continues owning
-                 * its normal scrolling behavior.
-                 */
-                return Offset.Zero
-            }
-
-            override suspend fun onPreFling(
-                available: Velocity
-            ): Velocity {
-
-                accumulatedDownwardDrag =
-                    0f
-
-                closeTriggered =
-                    false
-
-                return Velocity.Zero
             }
         }
-    }
 
     BackHandler {
         closeSearch()
     }
 
     /*
-     * Do not ask Compose, focus and the IME to do
-     * everything in the same frame.
+     * Frame 1:
+     * Search UI becomes visible.
      *
-     * Search UI
-     *   ↓ next frame
-     * focus
-     *   ↓ next frame
-     * keyboard
+     * Frame 2:
+     * Search field receives focus.
+     *
+     * Frame 3:
+     * Keyboard opens.
+     *
+     * This proved smoother than doing all three
+     * operations in the same frame.
      */
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -260,22 +309,36 @@ fun SearchScreen(
         keyboardController?.show()
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    MaterialTheme
-                        .colorScheme
-                        .surface
-                        .copy(
-                            alpha = 0.82f
-                        )
+    /*
+     * If the user has scrolled search results and
+     * changes the query, move the new results back
+     * to the beginning.
+     */
+    LaunchedEffect(query) {
+        if (
+            query.isNotBlank() &&
+            (
+                gridState
+                    .firstVisibleItemIndex > 0 ||
+                    gridState
+                        .firstVisibleItemScrollOffset > 0
                 )
-        )
+        ) {
+            gridState.scrollToItem(0)
+        }
+    }
 
+    Surface(
+        modifier =
+            Modifier.fillMaxSize(),
+        color =
+            MaterialTheme
+                .colorScheme
+                .surface
+                .copy(
+                    alpha = 0.82f
+                )
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -296,11 +359,21 @@ fun SearchScreen(
                     query = ""
                 },
                 onSubmit = {
+
                     results
                         .firstOrNull()
-                        ?.let(
-                            onAppClick
-                        )
+                        ?.let { app ->
+
+                            /*
+                             * true:
+                             * this application was opened
+                             * from an actual typed search.
+                             */
+                            onAppClick(
+                                app,
+                                true
+                            )
+                        }
                 }
             )
 
@@ -334,32 +407,148 @@ fun SearchScreen(
             ) {
 
                 /*
-                 * Empty Search will eventually contain:
+                 * SEARCH IS EMPTY
                  *
-                 * - recent apps
-                 * - recently searched apps
-                 *
-                 * For this first checkpoint we keep
-                 * this area intentionally simple.
+                 * Show recent applications and
+                 * recently searched applications.
                  */
                 if (query.isBlank()) {
 
-                    item(
-                        key = "empty-search",
-                        contentType = "message",
-                        span = {
-                            GridItemSpan(
-                                maxLineSpan
-                            )
-                        }
+                    if (
+                        recentApps.isEmpty() &&
+                        recentSearchApps.isEmpty()
                     ) {
-                        EmptySearchState()
+
+                        item(
+                            key =
+                                "empty-search",
+                            contentType =
+                                "message",
+                            span = {
+                                GridItemSpan(
+                                    maxLineSpan
+                                )
+                            }
+                        ) {
+                            EmptySearchState()
+                        }
+
+                    } else {
+
+                        if (
+                            recentApps
+                                .isNotEmpty()
+                        ) {
+
+                            item(
+                                key =
+                                    "recent-heading",
+                                contentType =
+                                    "heading",
+                                span = {
+                                    GridItemSpan(
+                                        maxLineSpan
+                                    )
+                                }
+                            ) {
+                                SearchSectionHeader(
+                                    title =
+                                        "Recientes"
+                                )
+                            }
+
+                            items(
+                                items =
+                                    recentApps,
+                                key = { app ->
+                                    "recent:" +
+                                        appKey(app)
+                                },
+                                contentType = {
+                                    "app"
+                                }
+                            ) { app ->
+
+                                SearchAppItem(
+                                    app = app,
+                                    onClick = {
+
+                                        /*
+                                         * Opening from Recents
+                                         * updates Recents but is
+                                         * not considered a typed
+                                         * search.
+                                         */
+                                        onAppClick(
+                                            app,
+                                            false
+                                        )
+                                    }
+                                )
+                            }
+                        }
+
+                        if (
+                            recentSearchApps
+                                .isNotEmpty()
+                        ) {
+
+                            item(
+                                key =
+                                    "recent-search-heading",
+                                contentType =
+                                    "heading",
+                                span = {
+                                    GridItemSpan(
+                                        maxLineSpan
+                                    )
+                                }
+                            ) {
+                                SearchSectionHeader(
+                                    title =
+                                        "Buscadas recientemente"
+                                )
+                            }
+
+                            items(
+                                items =
+                                    recentSearchApps,
+                                key = { app ->
+                                    "searched:" +
+                                        appKey(app)
+                                },
+                                contentType = {
+                                    "app"
+                                }
+                            ) { app ->
+
+                                SearchAppItem(
+                                    app = app,
+                                    onClick = {
+
+                                        /*
+                                         * Reopening an application
+                                         * from search history moves
+                                         * it back to the beginning
+                                         * of that history.
+                                         */
+                                        onAppClick(
+                                            app,
+                                            true
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
 
                 } else if (
                     results.isEmpty()
                 ) {
 
+                    /*
+                     * QUERY WITH NO RESULTS
+                     */
                     item(
                         key =
                             "no-results",
@@ -372,12 +561,16 @@ fun SearchScreen(
                         }
                     ) {
                         NoResultsState(
-                            query = query
+                            query =
+                                query
                         )
                     }
 
                 } else {
 
+                    /*
+                     * QUERY WITH RESULTS
+                     */
                     item(
                         key =
                             "results-heading",
@@ -391,10 +584,13 @@ fun SearchScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Aplicaciones",
-                                fontSize = 19.sp,
+                                text =
+                                    "Aplicaciones",
+                                fontSize =
+                                    19.sp,
                                 fontWeight =
-                                    FontWeight.SemiBold,
+                                    FontWeight
+                                        .SemiBold,
                                 color =
                                     MaterialTheme
                                         .colorScheme
@@ -410,8 +606,16 @@ fun SearchScreen(
 
                             Text(
                                 text =
-                                    "${results.size} resultados",
-                                fontSize = 13.sp,
+                                    if (
+                                        results.size ==
+                                        1
+                                    ) {
+                                        "1 resultado"
+                                    } else {
+                                        "${results.size} resultados"
+                                    },
+                                fontSize =
+                                    13.sp,
                                 color =
                                     MaterialTheme
                                         .colorScheme
@@ -421,9 +625,11 @@ fun SearchScreen(
                     }
 
                     items(
-                        items = results,
+                        items =
+                            results,
                         key = { app ->
-                            appKey(app)
+                            "result:" +
+                                appKey(app)
                         },
                         contentType = {
                             "app"
@@ -433,7 +639,11 @@ fun SearchScreen(
                         SearchAppItem(
                             app = app,
                             onClick = {
-                                onAppClick(app)
+
+                                onAppClick(
+                                    app,
+                                    true
+                                )
                             }
                         )
                     }
@@ -489,7 +699,8 @@ private fun SearchHeader(
             )
 
             OutlinedTextField(
-                value = query,
+                value =
+                    query,
                 onValueChange =
                     onQueryChange,
                 modifier =
@@ -500,18 +711,23 @@ private fun SearchHeader(
                         ),
                 placeholder = {
                     Text(
-                        "Buscar aplicaciones"
+                        text =
+                            "Buscar aplicaciones"
                     )
                 },
                 trailingIcon = {
-                    if (query.isNotEmpty()) {
+
+                    if (
+                        query.isNotEmpty()
+                    ) {
                         TextButton(
                             onClick =
                                 onClear
                         ) {
                             Text(
                                 text = "×",
-                                fontSize = 22.sp
+                                fontSize =
+                                    22.sp
                             )
                         }
                     }
@@ -538,6 +754,29 @@ private fun SearchHeader(
 }
 
 @Composable
+private fun SearchSectionHeader(
+    title: String
+) {
+    Text(
+        text =
+            title,
+        modifier =
+            Modifier.padding(
+                top = 8.dp,
+                bottom = 2.dp
+            ),
+        fontSize =
+            19.sp,
+        fontWeight =
+            FontWeight.SemiBold,
+        color =
+            MaterialTheme
+                .colorScheme
+                .onSurface
+    )
+}
+
+@Composable
 private fun EmptySearchState() {
     Column(
         modifier = Modifier
@@ -551,7 +790,8 @@ private fun EmptySearchState() {
         Text(
             text =
                 "Buscar aplicaciones",
-            fontSize = 18.sp,
+            fontSize =
+                18.sp,
             fontWeight =
                 FontWeight.Medium,
             color =
@@ -572,11 +812,13 @@ private fun EmptySearchState() {
                 "Empieza a escribir el nombre de una aplicación.",
             modifier =
                 Modifier.padding(
-                    horizontal = 24.dp
+                    horizontal =
+                        24.dp
                 ),
             textAlign =
                 TextAlign.Center,
-            fontSize = 14.sp,
+            fontSize =
+                14.sp,
             color =
                 MaterialTheme
                     .colorScheme
@@ -601,7 +843,8 @@ private fun NoResultsState(
             ),
         textAlign =
             TextAlign.Center,
-        fontSize = 14.sp,
+        fontSize =
+            14.sp,
         color =
             MaterialTheme
                 .colorScheme
@@ -688,8 +931,10 @@ private fun SearchAppItem(
                 TextOverflow.Ellipsis,
             textAlign =
                 TextAlign.Center,
-            fontSize = 12.sp,
-            lineHeight = 14.sp,
+            fontSize =
+                12.sp,
+            lineHeight =
+                14.sp,
             color =
                 MaterialTheme
                     .colorScheme
@@ -721,8 +966,10 @@ private fun PressTextButton(
             )
     ) {
         Text(
-            text = text,
-            fontSize = fontSize.sp
+            text =
+                text,
+            fontSize =
+                fontSize.sp
         )
     }
 }
@@ -749,7 +996,8 @@ private fun Modifier.pressScale(
             animationSpec =
                 if (isPressed) {
                     tween(
-                        durationMillis = 55,
+                        durationMillis =
+                            55,
                         easing =
                             FastOutSlowInEasing
                     )
@@ -766,8 +1014,11 @@ private fun Modifier.pressScale(
         )
 
     return this.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
+        scaleX =
+            scale
+
+        scaleY =
+            scale
     }
 }
 
@@ -838,6 +1089,384 @@ private fun SearchWindowEffect() {
     }
 }
 
+/*
+ * ------------------------------------------------------------------
+ * SEARCH ENGINE
+ * ------------------------------------------------------------------
+ */
+
+private data class SearchIndexEntry(
+    val app: InstalledApp,
+    val normalizedLabel: String,
+    val normalizedWords: List<String>,
+    val acronym: String,
+    val aliases: Set<String>
+)
+
+private data class RankedSearchResult(
+    val entry: SearchIndexEntry,
+    val score: Int
+)
+
+private fun rankSearchResults(
+    searchIndex:
+        List<SearchIndexEntry>,
+    query: String,
+    collator: Collator
+): List<InstalledApp> {
+
+    val normalizedQuery =
+        normalizeSearchText(
+            query
+        )
+
+    if (
+        normalizedQuery.isBlank()
+    ) {
+        return emptyList()
+    }
+
+    val rankedResults =
+        searchIndex
+            .mapNotNull { entry ->
+
+                val score =
+                    searchScore(
+                        entry =
+                            entry,
+                        query =
+                            normalizedQuery
+                    )
+
+                if (score == null) {
+                    null
+                } else {
+                    RankedSearchResult(
+                        entry =
+                            entry,
+                        score =
+                            score
+                    )
+                }
+            }
+
+    /*
+     * Explicit Comparator instead of labeled
+     * returns inside sortedWith.
+     *
+     * This avoids the Kotlin return-type problem
+     * we encountered previously.
+     */
+    val comparator =
+        Comparator<RankedSearchResult> {
+                first,
+                second ->
+
+            when {
+
+                first.score !=
+                    second.score -> {
+
+                    first.score
+                        .compareTo(
+                            second.score
+                        )
+                }
+
+                first.entry
+                    .normalizedLabel
+                    .length !=
+                    second.entry
+                        .normalizedLabel
+                        .length -> {
+
+                    first.entry
+                        .normalizedLabel
+                        .length
+                        .compareTo(
+                            second.entry
+                                .normalizedLabel
+                                .length
+                        )
+                }
+
+                else -> {
+
+                    collator.compare(
+                        first.entry
+                            .app
+                            .label,
+                        second.entry
+                            .app
+                            .label
+                    )
+                }
+            }
+        }
+
+    return rankedResults
+        .sortedWith(
+            comparator
+        )
+        .map { rankedResult ->
+            rankedResult.entry.app
+        }
+}
+
+private fun searchScore(
+    entry: SearchIndexEntry,
+    query: String
+): Int? {
+
+    /*
+     * Acronyms and aliases don't contain spaces,
+     * so make a compact version of the query too.
+     *
+     * Example:
+     *
+     * "g m" → "gm"
+     */
+    val compactQuery =
+        query.replace(
+            " ",
+            ""
+        )
+
+    return when {
+
+        /*
+         * 1. Exact application name.
+         *
+         * "spotify"
+         *      ↓
+         * Spotify
+         */
+        entry.normalizedLabel ==
+            query -> 0
+
+        /*
+         * 2. Exact known abbreviation.
+         *
+         * wsp → WhatsApp
+         * ds  → Discord
+         *
+         * Or exact automatic acronym:
+         *
+         * gm → Google Maps
+         * sn → Samsung Notes
+         */
+        entry.aliases
+            .contains(
+                compactQuery
+            ) -> 1
+
+        entry.acronym
+            .isNotEmpty() &&
+            entry.acronym ==
+                compactQuery -> 1
+
+        /*
+         * 3. Application name starts with query.
+         *
+         * spo → Spotify
+         */
+        entry.normalizedLabel
+            .startsWith(
+                query
+            ) -> 2
+
+        /*
+         * 4. A word inside the app name starts
+         *    with the query.
+         *
+         * maps → Google Maps
+         * notes → Samsung Notes
+         */
+        entry.normalizedWords
+            .any { word ->
+                word.startsWith(
+                    query
+                )
+            } -> 3
+
+        /*
+         * 5. Partial abbreviation/acronym.
+         *
+         * ws → WhatsApp via "wsp"
+         *
+         * We require at least two characters
+         * to prevent a one-character search from
+         * matching dozens of acronyms.
+         */
+        compactQuery.length >= 2 &&
+            entry.aliases
+                .any { alias ->
+                    alias.startsWith(
+                        compactQuery
+                    )
+                } -> 4
+
+        compactQuery.length >= 2 &&
+            entry.acronym
+                .isNotEmpty() &&
+            entry.acronym
+                .startsWith(
+                    compactQuery
+                ) -> 4
+
+        /*
+         * 6. Last resort:
+         * query appears somewhere in the name.
+         */
+        entry.normalizedLabel
+            .contains(
+                query
+            ) -> 5
+
+        else ->
+            null
+    }
+}
+
+private fun splitSearchWords(
+    normalizedLabel: String
+): List<String> {
+
+    return normalizedLabel
+        .split(
+            Regex(
+                "[^\\p{L}\\p{N}]+"
+            )
+        )
+        .filter {
+            it.isNotBlank()
+        }
+}
+
+private fun buildAcronym(
+    words: List<String>
+): String {
+
+    /*
+     * Acronyms only make sense when an app
+     * has at least two words.
+     *
+     * Google Maps     → gm
+     * Google Photos   → gp
+     * Samsung Notes   → sn
+     * Microsoft Teams → mt
+     */
+    if (
+        words.size < 2
+    ) {
+        return ""
+    }
+
+    return words
+        .mapNotNull { word ->
+            word.firstOrNull()
+        }
+        .joinToString(
+            separator = ""
+        )
+}
+
+private fun searchAliasesFor(
+    normalizedLabel: String
+): Set<String> {
+
+    /*
+     * Some commonly used abbreviations cannot be
+     * derived reliably from the application name.
+     *
+     * Keep this list intentionally small and
+     * predictable. We can expand it later when
+     * there is a real use case.
+     */
+    return when {
+
+        normalizedLabel
+            .startsWith(
+                "whatsapp"
+            ) -> {
+            setOf(
+                "wsp",
+                "ws",
+                "wa",
+                "wpp"
+            )
+        }
+
+        normalizedLabel
+            .startsWith(
+                "discord"
+            ) -> {
+            setOf(
+                "ds",
+                "dc"
+            )
+        }
+
+        normalizedLabel
+            .startsWith(
+                "instagram"
+            ) -> {
+            setOf(
+                "ig"
+            )
+        }
+
+        normalizedLabel
+            .startsWith(
+                "youtube"
+            ) -> {
+            setOf(
+                "yt"
+            )
+        }
+
+        normalizedLabel
+            .startsWith(
+                "telegram"
+            ) -> {
+            setOf(
+                "tg"
+            )
+        }
+
+        normalizedLabel
+            .startsWith(
+                "chatgpt"
+            ) -> {
+            setOf(
+                "gpt"
+            )
+        }
+
+        else ->
+            emptySet()
+    }
+}
+
+private fun normalizeSearchText(
+    value: String
+): String {
+
+    return Normalizer
+        .normalize(
+            value,
+            Normalizer.Form.NFD
+        )
+        .replace(
+            Regex("\\p{Mn}+"),
+            ""
+        )
+        .lowercase(
+            Locale.getDefault()
+        )
+        .trim()
+}
+
 private fun Context.findActivity():
     Activity? {
 
@@ -860,25 +1489,6 @@ private fun Context.findActivity():
     }
 
     return null
-}
-
-private fun normalizeSearchText(
-    value: String
-): String {
-
-    return Normalizer
-        .normalize(
-            value,
-            Normalizer.Form.NFD
-        )
-        .replace(
-            Regex("\\p{Mn}+"),
-            ""
-        )
-        .lowercase(
-            Locale.getDefault()
-        )
-        .trim()
 }
 
 private fun appKey(

@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 
 @Composable
 fun LauncherSearchBar(
@@ -40,7 +41,8 @@ fun LauncherSearchBar(
     focusRequester: FocusRequester,
     onBack: () -> Unit,
     onClear: () -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    fieldTestTag: String? = null
 ) {
     Surface(
         modifier =
@@ -84,6 +86,15 @@ fun LauncherSearchBar(
                         .weight(1f)
                         .focusRequester(
                             focusRequester
+                        )
+                        .then(
+                            if (fieldTestTag != null) {
+                                Modifier.testTag(
+                                    fieldTestTag
+                                )
+                            } else {
+                                Modifier
+                            }
                         ),
                 placeholder = {
                     Text(

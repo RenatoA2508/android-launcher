@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -112,8 +116,16 @@ fun SearchScreen(
             }
         }
 
+    /*
+     * Search index.
+     *
+     * Application names are normalized only when
+     * the installed app list changes, not for every
+     * keyboard character.
+     */
     val searchIndex =
         remember(apps) {
+
             apps.map { app ->
 
                 val normalizedLabel =
@@ -127,7 +139,8 @@ fun SearchScreen(
                     )
 
                 SearchIndexEntry(
-                    app = app,
+                    app =
+                        app,
                     normalizedLabel =
                         normalizedLabel,
                     normalizedWords =
@@ -172,34 +185,50 @@ fun SearchScreen(
         }
 
     /*
-     * Only preload what is likely to be displayed
-     * immediately.
+     * Shared launcher icon cache.
      *
-     * The shared process-level cache retains every
-     * icon once it has been prepared.
+     * When Search is empty, preload the applications
+     * that will immediately be visible.
+     *
+     * When typing, preload the first search results.
      */
     val iconsToPreload =
         if (query.isBlank()) {
+
             recentApps +
                 recentSearchApps
+
         } else {
-            results.take(12)
+
+            results.take(
+                12
+            )
         }
 
     PreloadLauncherAppIcons(
         apps =
-            iconsToPreload.distinctBy {
-                appKey(it)
-            }
+            iconsToPreload
+                .distinctBy {
+                    appKey(it)
+                }
     )
 
     fun closeSearch() {
+
         keyboardController?.hide()
+
         focusManager.clearFocus()
 
         onBack()
     }
 
+    /*
+     * Swipe down closes Search only when the list is
+     * already at the top.
+     *
+     * Therefore normal scrolling through results
+     * cannot accidentally close Search.
+     */
     val swipeDownConnection =
         remember(
             gridState,
@@ -208,6 +237,7 @@ fun SearchScreen(
             focusManager,
             onBack
         ) {
+
             object :
                 NestedScrollConnection {
 
@@ -243,6 +273,7 @@ fun SearchScreen(
                             accumulatedDownwardDrag >=
                             swipeDownThresholdPx
                         ) {
+
                             closeTriggered =
                                 true
 
@@ -259,6 +290,7 @@ fun SearchScreen(
                         available.y < 0f ||
                         !isAtTop
                     ) {
+
                         accumulatedDownwardDrag =
                             0f
 
@@ -266,6 +298,12 @@ fun SearchScreen(
                             false
                     }
 
+                    /*
+                     * Observe only.
+                     *
+                     * Do not steal the gesture from
+                     * LazyVerticalGrid.
+                     */
                     return Offset.Zero
                 }
 
@@ -288,7 +326,18 @@ fun SearchScreen(
         closeSearch()
     }
 
+    /*
+     * Search startup:
+     *
+     * frame 1 -> compose Search
+     * frame 2 -> request focus
+     * frame 3 -> show IME
+     *
+     * This produced better 120 Hz behavior than
+     * performing everything simultaneously.
+     */
     LaunchedEffect(Unit) {
+
         withFrameNanos { }
 
         focusRequester.requestFocus()
@@ -298,7 +347,12 @@ fun SearchScreen(
         keyboardController?.show()
     }
 
+    /*
+     * A changed query should show its results
+     * from the beginning.
+     */
     LaunchedEffect(query) {
+
         if (
             query.isNotBlank() &&
             (
@@ -308,13 +362,31 @@ fun SearchScreen(
                         .firstVisibleItemScrollOffset > 0
                 )
         ) {
-            gridState.scrollToItem(0)
+
+            gridState.scrollToItem(
+                0
+            )
         }
     }
 
+    /*
+     * testTagsAsResourceId allows UI Automator to
+     * find our Compose testTag values through
+     * By.res(...).
+     *
+     * This has no visual effect.
+     */
     Surface(
         modifier =
-            Modifier.fillMaxSize(),
+            Modifier
+                .fillMaxSize()
+                .semantics {
+                    testTagsAsResourceId =
+                        true
+                }
+                .testTag(
+                    SEARCH_ROOT_TAG
+                ),
         color =
             MaterialTheme
                 .colorScheme
@@ -323,12 +395,20 @@ fun SearchScreen(
                     alpha = 0.82f
                 )
     ) {
+
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
         ) {
+
+            /*
+             * Stable automation tag:
+             *
+             * launcher_search_field
+             */
             LauncherSearchBar(
                 query =
                     query,
@@ -354,27 +434,38 @@ fun SearchScreen(
                                 true
                             )
                         }
-                }
+                },
+                fieldTestTag =
+                    SEARCH_FIELD_TAG
             )
 
             LazyVerticalGrid(
                 columns =
-                    GridCells.Fixed(4),
+                    GridCells.Fixed(
+                        4
+                    ),
                 state =
                     gridState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .imePadding()
-                    .nestedScroll(
-                        swipeDownConnection
-                    ),
+                modifier =
+                    Modifier
+                        .weight(
+                            1f
+                        )
+                        .fillMaxWidth()
+                        .imePadding()
+                        .nestedScroll(
+                            swipeDownConnection
+                        ),
                 contentPadding =
                     PaddingValues(
-                        start = 20.dp,
-                        end = 20.dp,
-                        top = 6.dp,
-                        bottom = 16.dp
+                        start =
+                            20.dp,
+                        end =
+                            20.dp,
+                        top =
+                            6.dp,
+                        bottom =
+                            16.dp
                     ),
                 horizontalArrangement =
                     Arrangement.spacedBy(
@@ -385,6 +476,12 @@ fun SearchScreen(
                         6.dp
                     )
             ) {
+
+                /*
+                 * =================================================
+                 * EMPTY QUERY
+                 * =================================================
+                 */
 
                 if (query.isBlank()) {
 
@@ -404,10 +501,17 @@ fun SearchScreen(
                                 )
                             }
                         ) {
+
                             EmptySearchState()
                         }
 
                     } else {
+
+                        /*
+                         * -----------------------------
+                         * RECENT APPS
+                         * -----------------------------
+                         */
 
                         if (
                             recentApps.isNotEmpty()
@@ -424,6 +528,7 @@ fun SearchScreen(
                                     )
                                 }
                             ) {
+
                                 SearchSectionHeader(
                                     title =
                                         "Recientes"
@@ -434,8 +539,11 @@ fun SearchScreen(
                                 items =
                                     recentApps,
                                 key = { app ->
+
                                     "recent:" +
-                                        appKey(app)
+                                        appKey(
+                                            app
+                                        )
                                 },
                                 contentType = {
                                     "app"
@@ -443,8 +551,17 @@ fun SearchScreen(
                             ) { app ->
 
                                 SearchAppItem(
-                                    app = app,
+                                    app =
+                                        app,
                                     onClick = {
+
+                                        /*
+                                         * Opening from Recents:
+                                         *
+                                         * update general recents,
+                                         * but don't count as a new
+                                         * typed search.
+                                         */
                                         onAppClick(
                                             app,
                                             false
@@ -453,6 +570,12 @@ fun SearchScreen(
                                 )
                             }
                         }
+
+                        /*
+                         * -----------------------------
+                         * RECENT SEARCH APPS
+                         * -----------------------------
+                         */
 
                         if (
                             recentSearchApps
@@ -470,6 +593,7 @@ fun SearchScreen(
                                     )
                                 }
                             ) {
+
                                 SearchSectionHeader(
                                     title =
                                         "Buscadas recientemente"
@@ -480,8 +604,11 @@ fun SearchScreen(
                                 items =
                                     recentSearchApps,
                                 key = { app ->
+
                                     "searched:" +
-                                        appKey(app)
+                                        appKey(
+                                            app
+                                        )
                                 },
                                 contentType = {
                                     "app"
@@ -489,8 +616,16 @@ fun SearchScreen(
                             ) { app ->
 
                                 SearchAppItem(
-                                    app = app,
+                                    app =
+                                        app,
                                     onClick = {
+
+                                        /*
+                                         * Reopening something from
+                                         * the search history moves
+                                         * it back to the top of
+                                         * that history.
+                                         */
                                         onAppClick(
                                             app,
                                             true
@@ -505,6 +640,12 @@ fun SearchScreen(
                     results.isEmpty()
                 ) {
 
+                    /*
+                     * =================================================
+                     * QUERY WITH NO RESULTS
+                     * =================================================
+                     */
+
                     item(
                         key =
                             "no-results",
@@ -516,6 +657,7 @@ fun SearchScreen(
                             )
                         }
                     ) {
+
                         NoResultsState(
                             query =
                                 query
@@ -525,26 +667,54 @@ fun SearchScreen(
                 } else {
 
                     /*
-                     * No "Aplicaciones" heading and no
-                     * result counter.
+                     * =================================================
+                     * SEARCH RESULTS
+                     * =================================================
                      *
-                     * Search results begin immediately.
+                     * No "Aplicaciones" heading.
+                     * No result counter.
+                     *
+                     * Results start immediately below
+                     * the search field.
+                     *
+                     * Every result gets an automation
+                     * tag:
+                     *
+                     * launcher_search_result_0
+                     * launcher_search_result_1
+                     * launcher_search_result_2
+                     * ...
                      */
-                    items(
+
+                    itemsIndexed(
                         items =
                             results,
-                        key = { app ->
+                        key = {
+                                _,
+                                app ->
+
                             "result:" +
-                                appKey(app)
+                                appKey(
+                                    app
+                                )
                         },
                         contentType = {
+                                _,
+                                _ ->
+
                             "app"
                         }
-                    ) { app ->
+                    ) {
+                            index,
+                            app ->
 
                         SearchAppItem(
-                            app = app,
+                            app =
+                                app,
+                            testTag =
+                                "$SEARCH_RESULT_TAG_PREFIX$index",
                             onClick = {
+
                                 onAppClick(
                                     app,
                                     true
@@ -562,13 +732,16 @@ fun SearchScreen(
 private fun SearchSectionHeader(
     title: String
 ) {
+
     Text(
         text =
             title,
         modifier =
             Modifier.padding(
-                top = 8.dp,
-                bottom = 0.dp
+                top =
+                    8.dp,
+                bottom =
+                    0.dp
             ),
         fontSize =
             17.sp,
@@ -583,15 +756,19 @@ private fun SearchSectionHeader(
 
 @Composable
 private fun EmptySearchState() {
+
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                top = 40.dp
-            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    top =
+                        40.dp
+                ),
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
+
         Text(
             text =
                 "Buscar aplicaciones",
@@ -636,16 +813,21 @@ private fun EmptySearchState() {
 private fun NoResultsState(
     query: String
 ) {
+
     Text(
         text =
             "No encontramos una aplicación para \"$query\".",
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                top = 40.dp,
-                start = 24.dp,
-                end = 24.dp
-            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    top =
+                        40.dp,
+                    start =
+                        24.dp,
+                    end =
+                        24.dp
+                ),
         textAlign =
             TextAlign.Center,
         fontSize =
@@ -660,8 +842,16 @@ private fun NoResultsState(
 @Composable
 private fun SearchAppItem(
     app: InstalledApp,
+    testTag: String? = null,
     onClick: () -> Unit
 ) {
+
+    /*
+     * Shared process-wide launcher icon cache.
+     *
+     * No Drawable -> Bitmap conversion happens
+     * inside Search.
+     */
     val iconBitmap =
         rememberLauncherAppIcon(
             app
@@ -676,32 +866,57 @@ private fun SearchAppItem(
         LocalIndication.current
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressScale(
-                interactionSource =
-                    interactionSource
-            )
-            .clip(
-                RoundedCornerShape(
-                    18.dp
+        modifier =
+            Modifier
+                .fillMaxWidth()
+
+                /*
+                 * Search result automation tag.
+                 *
+                 * Recent apps don't get one because
+                 * the Baseline Profile only needs
+                 * deterministic tags for typed
+                 * search results.
+                 */
+                .then(
+                    if (
+                        testTag != null
+                    ) {
+                        Modifier.testTag(
+                            testTag
+                        )
+                    } else {
+                        Modifier
+                    }
                 )
-            )
-            .clickable(
-                interactionSource =
-                    interactionSource,
-                indication =
-                    indication,
-                onClick =
-                    onClick
-            )
-            .padding(
-                horizontal = 3.dp,
-                vertical = 6.dp
-            ),
+
+                .pressScale(
+                    interactionSource =
+                        interactionSource
+                )
+                .clip(
+                    RoundedCornerShape(
+                        18.dp
+                    )
+                )
+                .clickable(
+                    interactionSource =
+                        interactionSource,
+                    indication =
+                        indication,
+                    onClick =
+                        onClick
+                )
+                .padding(
+                    horizontal =
+                        3.dp,
+                    vertical =
+                        6.dp
+                ),
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
+
         Image(
             bitmap =
                 iconBitmap,
@@ -723,7 +938,8 @@ private fun SearchAppItem(
         Text(
             text =
                 app.label,
-            maxLines = 2,
+            maxLines =
+                2,
             overflow =
                 TextOverflow.Ellipsis,
             textAlign =
@@ -743,49 +959,59 @@ private fun SearchAppItem(
 @Composable
 private fun Modifier.pressScale(
     interactionSource:
-        MutableInteractionSource,
-    pressedScale: Float = 0.965f
+    MutableInteractionSource,
+    pressedScale: Float =
+        0.965f
 ): Modifier {
 
     val isPressed by
-        interactionSource
-            .collectIsPressedAsState()
+    interactionSource
+        .collectIsPressedAsState()
 
     val scale by
-        animateFloatAsState(
-            targetValue =
-                if (isPressed) {
-                    pressedScale
-                } else {
-                    1f
-                },
-            animationSpec =
-                if (isPressed) {
-                    tween(
-                        durationMillis = 55,
-                        easing =
-                            FastOutSlowInEasing
-                    )
-                } else {
-                    spring(
-                        dampingRatio =
-                            0.82f,
-                        stiffness =
-                            900f
-                    )
-                },
-            label =
-                "searchPressScale"
-        )
+    animateFloatAsState(
+        targetValue =
+            if (isPressed) {
+                pressedScale
+            } else {
+                1f
+            },
+        animationSpec =
+            if (isPressed) {
+
+                tween(
+                    durationMillis =
+                        55,
+                    easing =
+                        FastOutSlowInEasing
+                )
+
+            } else {
+
+                spring(
+                    dampingRatio =
+                        0.82f,
+                    stiffness =
+                        900f
+                )
+            },
+        label =
+            "searchPressScale"
+    )
 
     return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
+
+        scaleX =
+            scale
+
+        scaleY =
+            scale
     }
 }
 
 @Composable
 private fun SearchWindowEffect() {
+
     val context =
         LocalContext.current
 
@@ -797,6 +1023,7 @@ private fun SearchWindowEffect() {
     DisposableEffect(
         activity
     ) {
+
         val window =
             activity?.window
 
@@ -805,6 +1032,7 @@ private fun SearchWindowEffect() {
             Build.VERSION.SDK_INT >=
             Build.VERSION_CODES.S
         ) {
+
             window.addFlags(
                 WindowManager
                     .LayoutParams
@@ -830,6 +1058,7 @@ private fun SearchWindowEffect() {
                 Build.VERSION.SDK_INT >=
                 Build.VERSION_CODES.S
             ) {
+
                 val attributes =
                     window.attributes
 
@@ -851,6 +1080,12 @@ private fun SearchWindowEffect() {
     }
 }
 
+/*
+ * ============================================================
+ * SEARCH ENGINE
+ * ============================================================
+ */
+
 private data class SearchIndexEntry(
     val app: InstalledApp,
     val normalizedLabel: String,
@@ -866,7 +1101,7 @@ private data class RankedSearchResult(
 
 private fun rankSearchResults(
     searchIndex:
-        List<SearchIndexEntry>,
+    List<SearchIndexEntry>,
     query: String,
     collator: Collator
 ): List<InstalledApp> {
@@ -894,9 +1129,14 @@ private fun rankSearchResults(
                             normalizedQuery
                     )
 
-                if (score == null) {
+                if (
+                    score == null
+                ) {
+
                     null
+
                 } else {
+
                     RankedSearchResult(
                         entry =
                             entry,
@@ -906,6 +1146,13 @@ private fun rankSearchResults(
                 }
             }
 
+    /*
+     * Ranking:
+     *
+     * 1. quality score
+     * 2. shorter application name
+     * 3. locale-aware alphabetical order
+     */
     val comparator =
         Comparator<RankedSearchResult> {
                 first,
@@ -916,9 +1163,10 @@ private fun rankSearchResults(
                 first.score !=
                     second.score -> {
 
-                    first.score.compareTo(
-                        second.score
-                    )
+                    first.score
+                        .compareTo(
+                            second.score
+                        )
                 }
 
                 first.entry
@@ -957,7 +1205,10 @@ private fun rankSearchResults(
             comparator
         )
         .map { rankedResult ->
-            rankedResult.entry.app
+
+            rankedResult
+                .entry
+                .app
         }
 }
 
@@ -974,39 +1225,77 @@ private fun searchScore(
 
     return when {
 
+        /*
+         * Exact application name.
+         *
+         * spotify -> Spotify
+         */
         entry.normalizedLabel ==
             query -> 0
 
+        /*
+         * Known alias.
+         *
+         * wsp -> WhatsApp
+         * ds  -> Discord
+         * gpt -> ChatGPT
+         */
         entry.aliases
             .contains(
                 compactQuery
             ) -> 1
 
+        /*
+         * Automatic acronym.
+         *
+         * gm -> Google Maps
+         * sn -> Samsung Notes
+         */
         entry.acronym
             .isNotEmpty() &&
             entry.acronym ==
-                compactQuery -> 1
+            compactQuery -> 1
 
+        /*
+         * Application name starts with query.
+         *
+         * spo -> Spotify
+         */
         entry.normalizedLabel
             .startsWith(
                 query
             ) -> 2
 
+        /*
+         * A word starts with query.
+         *
+         * notes -> Samsung Notes
+         */
         entry.normalizedWords
             .any { word ->
+
                 word.startsWith(
                     query
                 )
             } -> 3
 
+        /*
+         * Partial alias.
+         *
+         * ws -> WhatsApp
+         */
         compactQuery.length >= 2 &&
             entry.aliases
                 .any { alias ->
+
                     alias.startsWith(
                         compactQuery
                     )
                 } -> 4
 
+        /*
+         * Partial automatic acronym.
+         */
         compactQuery.length >= 2 &&
             entry.acronym
                 .isNotEmpty() &&
@@ -1015,6 +1304,11 @@ private fun searchScore(
                     compactQuery
                 ) -> 4
 
+        /*
+         * Last fallback:
+         *
+         * query appears somewhere inside the name.
+         */
         entry.normalizedLabel
             .contains(
                 query
@@ -1069,6 +1363,7 @@ private fun searchAliasesFor(
             .startsWith(
                 "whatsapp"
             ) -> {
+
             setOf(
                 "wsp",
                 "ws",
@@ -1081,6 +1376,7 @@ private fun searchAliasesFor(
             .startsWith(
                 "discord"
             ) -> {
+
             setOf(
                 "ds",
                 "dc"
@@ -1091,6 +1387,7 @@ private fun searchAliasesFor(
             .startsWith(
                 "instagram"
             ) -> {
+
             setOf(
                 "ig"
             )
@@ -1100,6 +1397,7 @@ private fun searchAliasesFor(
             .startsWith(
                 "youtube"
             ) -> {
+
             setOf(
                 "yt"
             )
@@ -1109,6 +1407,7 @@ private fun searchAliasesFor(
             .startsWith(
                 "telegram"
             ) -> {
+
             setOf(
                 "tg"
             )
@@ -1118,6 +1417,7 @@ private fun searchAliasesFor(
             .startsWith(
                 "chatgpt"
             ) -> {
+
             setOf(
                 "gpt"
             )
@@ -1155,11 +1455,12 @@ private fun Context.findActivity():
 
     while (
         currentContext is
-        ContextWrapper
+            ContextWrapper
     ) {
+
         if (
             currentContext is
-            Activity
+                Activity
         ) {
             return currentContext
         }
@@ -1179,3 +1480,22 @@ private fun appKey(
         app.componentName
             .flattenToString()
 }
+
+/*
+ * ============================================================
+ * AUTOMATION TAGS
+ * ============================================================
+ *
+ * These strings are intentionally stable.
+ *
+ * BaselineProfileGenerator will use them through UI Automator.
+ */
+
+private const val SEARCH_FIELD_TAG =
+    "launcher_search_field"
+
+private const val SEARCH_RESULT_TAG_PREFIX =
+    "launcher_search_result_"
+
+private const val SEARCH_ROOT_TAG =
+    "launcher_search_root"

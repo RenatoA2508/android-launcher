@@ -3,6 +3,9 @@ package com.renato.launcher.home
 import android.text.format.DateFormat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,11 +36,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -51,10 +59,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.ui.components.AppContextMenu
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
-import com.renato.launcher.ui.interactions.launcherAppCombinedClickable
+import com.renato.launcher.ui.interactions.launcherAppClickable
 import com.renato.launcher.ui.interactions.launcherCombinedClickable
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -71,6 +80,7 @@ fun HomeScreen(
     onOpenSearch: () -> Unit,
     onAppInfo: (InstalledApp) -> Unit,
     onRemoveFavorite: (InstalledApp) -> Unit,
+    onReorderFavorites: (List<InstalledApp>) -> Unit,
     onUninstallApp: (InstalledApp) -> Unit
 ) {
     val wallpaperTextColor =
@@ -214,6 +224,8 @@ fun HomeScreen(
                         onAppInfo,
                     onRemoveFavorite =
                         onRemoveFavorite,
+                    onReorderFavorites =
+                        onReorderFavorites,
                     onUninstallApp =
                         onUninstallApp,
                     textColor =
@@ -416,9 +428,81 @@ private fun FavoriteAppsGrid(
     onAppClick: (InstalledApp) -> Unit,
     onAppInfo: (InstalledApp) -> Unit,
     onRemoveFavorite: (InstalledApp) -> Unit,
+    onReorderFavorites: (List<InstalledApp>) -> Unit,
     onUninstallApp: (InstalledApp) -> Unit,
     textColor: Color
 ) {
+    /*
+     * Home is intentionally not a LazyGrid. The favorite list is small and
+     * already laid out as two compact columns, so we keep the existing layout
+     * and track each app's real bounds for drag-and-drop hit testing.
+     */
+    val itemBoundsByKey =
+        remember {
+            mutableMapOf<String, Rect>()
+        }
+
+    var draggedAppKey by
+        remember {
+            mutableStateOf<String?>(
+                null
+            )
+        }
+
+    var dropTargetAppKey by
+        remember {
+            mutableStateOf<String?>(
+                null
+            )
+        }
+
+    var draggedTranslation by
+        remember {
+            mutableStateOf(
+                Offset.Zero
+            )
+        }
+
+    var dragPointerInRoot by
+        remember {
+            mutableStateOf(
+                Offset.Zero
+            )
+        }
+
+    fun clearDrag() {
+        draggedAppKey =
+            null
+
+        dropTargetAppKey =
+            null
+
+        draggedTranslation =
+            Offset.Zero
+
+        dragPointerInRoot =
+            Offset.Zero
+    }
+
+    LaunchedEffect(
+        apps
+    ) {
+        val currentDraggedKey =
+            draggedAppKey
+
+        if (
+            currentDraggedKey != null &&
+            apps.none {
+                    app ->
+
+                appKey(app) ==
+                    currentDraggedKey
+            }
+        ) {
+            clearDrag()
+        }
+    }
+
     Column(
         verticalArrangement =
             Arrangement.spacedBy(
@@ -444,9 +528,49 @@ private fun FavoriteAppsGrid(
                     rowApps.forEach {
                             app ->
 
+                        val key =
+                            appKey(
+                                app
+                            )
+
+                        val isGestureActive =
+                            draggedAppKey ==
+                                key
+
+                        val isDragging =
+                            isGestureActive &&
+                                draggedTranslation !=
+                                    Offset.Zero
+
+                        val isDropTarget =
+                            dropTargetAppKey ==
+                                key
+
                         FavoriteAppItem(
                             app =
                                 app,
+                            isGestureActive =
+                                isGestureActive,
+                            isDragging =
+                                isDragging,
+                            isDropTarget =
+                                isDropTarget,
+                            dragTranslation =
+                                if (
+                                    isGestureActive
+                                ) {
+                                    draggedTranslation
+                                } else {
+                                    Offset.Zero
+                                },
+                            onBoundsChanged = {
+                                    bounds ->
+
+                                itemBoundsByKey[
+                                    key
+                                ] =
+                                    bounds
+                            },
                             onClick = {
                                 onAppClick(
                                     app
@@ -466,6 +590,101 @@ private fun FavoriteAppsGrid(
                                 onUninstallApp(
                                     app
                                 )
+                            },
+                            onDragStart = {
+                                    touchOffset ->
+
+                                val bounds =
+                                    itemBoundsByKey[
+                                        key
+                                    ]
+
+                                if (
+                                    bounds != null
+                                ) {
+                                    draggedAppKey =
+                                        key
+
+                                    dropTargetAppKey =
+                                        null
+
+                                    draggedTranslation =
+                                        Offset.Zero
+
+                                    dragPointerInRoot =
+                                        Offset(
+                                            x =
+                                                bounds.left +
+                                                    touchOffset.x,
+                                            y =
+                                                bounds.top +
+                                                    touchOffset.y
+                                        )
+                                }
+                            },
+                            onDrag = {
+                                    dragAmount ->
+
+                                if (
+                                    draggedAppKey ==
+                                    key
+                                ) {
+                                    draggedTranslation +=
+                                        dragAmount
+
+                                    dragPointerInRoot +=
+                                        dragAmount
+
+                                    dropTargetAppKey =
+                                        findHomeDropTarget(
+                                            apps =
+                                                apps,
+                                            itemBoundsByKey =
+                                                itemBoundsByKey,
+                                            draggedAppKey =
+                                                key,
+                                            pointer =
+                                                dragPointerInRoot
+                                        )
+                                }
+                            },
+                            onDragEnd = {
+                                val sourceKey =
+                                    draggedAppKey
+
+                                val targetKey =
+                                    dropTargetAppKey
+
+                                if (
+                                    sourceKey != null &&
+                                    targetKey != null &&
+                                    sourceKey !=
+                                        targetKey
+                                ) {
+                                    val reorderedApps =
+                                        swapFavoriteApps(
+                                            apps =
+                                                apps,
+                                            sourceAppKey =
+                                                sourceKey,
+                                            targetAppKey =
+                                                targetKey
+                                        )
+
+                                    if (
+                                        reorderedApps !=
+                                        apps
+                                    ) {
+                                        onReorderFavorites(
+                                            reorderedApps
+                                        )
+                                    }
+                                }
+
+                                clearDrag()
+                            },
+                            onDragCancel = {
+                                clearDrag()
                             },
                             textColor =
                                 textColor,
@@ -493,14 +712,22 @@ private fun FavoriteAppsGrid(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FavoriteAppItem(
     app: InstalledApp,
+    isGestureActive: Boolean,
+    isDragging: Boolean,
+    isDropTarget: Boolean,
+    dragTranslation: Offset,
+    onBoundsChanged: (Rect) -> Unit,
     onClick: () -> Unit,
     onAppInfo: () -> Unit,
     onRemoveFavorite: () -> Unit,
     onUninstallApp: () -> Unit,
+    onDragStart: (Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
     textColor: Color,
     modifier: Modifier =
         Modifier
@@ -512,6 +739,27 @@ private fun FavoriteAppItem(
 
     val hapticFeedback =
         LocalHapticFeedback.current
+
+    val density =
+        LocalDensity.current
+
+    val dragStartThresholdPx =
+        remember(
+            density
+        ) {
+            with(density) {
+                6.dp.toPx()
+            }
+        }
+
+    val dragElevationPx =
+        remember(
+            density
+        ) {
+            with(density) {
+                12.dp.toPx()
+            }
+        }
 
     var menuExpanded by
         remember(
@@ -528,12 +776,137 @@ private fun FavoriteAppItem(
             18.dp
         )
 
+    val dragSurfaceColor =
+        MaterialTheme
+            .colorScheme
+            .surface
+            .copy(
+                alpha =
+                    if (
+                        isDragging
+                    ) {
+                        0.86f
+                    } else {
+                        0.58f
+                    }
+            )
+
+    val dropTargetColor =
+        MaterialTheme
+            .colorScheme
+            .primary
+            .copy(
+                alpha =
+                    0.92f
+            )
+
     /*
-     * The Box anchors the floating menu to this app.
+     * Gesture contract on Home:
+     *
+     * tap                         -> open app
+     * hold + release without move -> context menu
+     * hold + move                -> drag and drop
+     *
+     * The small 6dp threshold absorbs normal finger tremor, so a stationary
+     * long press does not accidentally turn into a reorder operation.
      */
     Box(
         modifier =
             modifier
+                .onGloballyPositioned {
+                        coordinates ->
+
+                    val position =
+                        coordinates
+                            .positionInRoot()
+
+                    onBoundsChanged(
+                        Rect(
+                            offset =
+                                position,
+                            size =
+                                Size(
+                                    width =
+                                        coordinates
+                                            .size
+                                            .width
+                                            .toFloat(),
+                                    height =
+                                        coordinates
+                                            .size
+                                            .height
+                                            .toFloat()
+                                )
+                        )
+                    )
+                }
+                .zIndex(
+                    if (
+                        isGestureActive
+                    ) {
+                        3f
+                    } else {
+                        0f
+                    }
+                )
+                .graphicsLayer {
+                    if (
+                        isGestureActive
+                    ) {
+                        translationX =
+                            dragTranslation.x
+
+                        translationY =
+                            dragTranslation.y
+
+                        shadowElevation =
+                            if (
+                                isDragging
+                            ) {
+                                dragElevationPx
+                            } else {
+                                0f
+                            }
+
+                        shape =
+                            itemShape
+
+                        clip =
+                            false
+                    }
+                }
+                .then(
+                    if (
+                        isGestureActive
+                    ) {
+                        Modifier
+                            .background(
+                                color =
+                                    dragSurfaceColor,
+                                shape =
+                                    itemShape
+                            )
+                    } else {
+                        Modifier
+                    }
+                )
+                .then(
+                    if (
+                        isDropTarget
+                    ) {
+                        Modifier
+                            .border(
+                                width =
+                                    2.dp,
+                                color =
+                                    dropTargetColor,
+                                shape =
+                                    itemShape
+                            )
+                    } else {
+                        Modifier
+                    }
+                )
     ) {
         Row(
             modifier =
@@ -543,22 +916,118 @@ private fun FavoriteAppItem(
                         min =
                             52.dp
                     )
-                    .launcherAppCombinedClickable(
+                    .pointerInput(
+                        app.componentName,
+                        app.user,
+                        dragStartThresholdPx
+                    ) {
+                        var cumulativeDrag =
+                            Offset.Zero
+
+                        var actualDragStarted =
+                            false
+
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                    touchOffset ->
+
+                                cumulativeDrag =
+                                    Offset.Zero
+
+                                actualDragStarted =
+                                    false
+
+                                menuExpanded =
+                                    false
+
+                                hapticFeedback
+                                    .performHapticFeedback(
+                                        HapticFeedbackType.LongPress
+                                    )
+
+                                onDragStart(
+                                    touchOffset
+                                )
+                            },
+                            onDragEnd = {
+                                if (
+                                    actualDragStarted
+                                ) {
+                                    onDragEnd()
+                                } else {
+                                    /*
+                                     * A stationary long press is the context
+                                     * menu gesture. The menu opens on release
+                                     * so it never steals the active pointer
+                                     * from a possible drag.
+                                     */
+                                    onDragCancel()
+
+                                    menuExpanded =
+                                        true
+                                }
+
+                                cumulativeDrag =
+                                    Offset.Zero
+
+                                actualDragStarted =
+                                    false
+                            },
+                            onDragCancel = {
+                                onDragCancel()
+
+                                cumulativeDrag =
+                                    Offset.Zero
+
+                                actualDragStarted =
+                                    false
+                            },
+                            onDrag = {
+                                    change,
+                                    dragAmount ->
+
+                                cumulativeDrag +=
+                                    dragAmount
+
+                                if (
+                                    !actualDragStarted &&
+                                    cumulativeDrag
+                                        .getDistance() >=
+                                        dragStartThresholdPx
+                                ) {
+                                    actualDragStarted =
+                                        true
+
+                                    change.consume()
+
+                                    /*
+                                     * Apply all movement accumulated while we
+                                     * were inside the tremor threshold so the
+                                     * tile catches up with the finger at once.
+                                     */
+                                    onDrag(
+                                        cumulativeDrag
+                                    )
+
+                                } else if (
+                                    actualDragStarted
+                                ) {
+                                    change.consume()
+
+                                    onDrag(
+                                        dragAmount
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    .launcherAppClickable(
+                        enabled =
+                            !isGestureActive,
                         shape =
                             itemShape,
                         onClickLabel =
                             "Abrir ${app.label}",
-                        onLongClickLabel =
-                            "Opciones de ${app.label}",
-                        onLongClick = {
-                            hapticFeedback
-                                .performHapticFeedback(
-                                    HapticFeedbackType.LongPress
-                                )
-
-                            menuExpanded =
-                                true
-                        },
                         onClick =
                             onClick
                     )
@@ -643,6 +1112,152 @@ private fun FavoriteAppItem(
             }
         )
     }
+}
+
+private fun findHomeDropTarget(
+    apps: List<InstalledApp>,
+    itemBoundsByKey: Map<String, Rect>,
+    draggedAppKey: String,
+    pointer: Offset
+): String? {
+    return apps
+        .asSequence()
+        .mapNotNull {
+                app ->
+
+            val candidateKey =
+                appKey(
+                    app
+                )
+
+            if (
+                candidateKey ==
+                draggedAppKey
+            ) {
+                return@mapNotNull null
+            }
+
+            val bounds =
+                itemBoundsByKey[
+                    candidateKey
+                ] ?: return@mapNotNull null
+
+            val horizontalTolerance =
+                bounds.width *
+                    0.16f
+
+            val verticalTolerance =
+                bounds.height *
+                    0.18f
+
+            val isNearCandidate =
+                pointer.x >=
+                    bounds.left -
+                        horizontalTolerance &&
+                pointer.x <=
+                    bounds.right +
+                        horizontalTolerance &&
+                pointer.y >=
+                    bounds.top -
+                        verticalTolerance &&
+                pointer.y <=
+                    bounds.bottom +
+                        verticalTolerance
+
+            if (
+                !isNearCandidate
+            ) {
+                return@mapNotNull null
+            }
+
+            val dx =
+                pointer.x -
+                    bounds.center.x
+
+            val dy =
+                pointer.y -
+                    bounds.center.y
+
+            candidateKey to
+                (dx * dx +
+                    dy * dy)
+        }
+        .minByOrNull {
+            it.second
+        }
+        ?.first
+}
+
+private fun swapFavoriteApps(
+    apps: List<InstalledApp>,
+    sourceAppKey: String,
+    targetAppKey: String
+): List<InstalledApp> {
+    val reordered =
+        apps.toMutableList()
+
+    val sourceIndex =
+        reordered
+            .indexOfFirst {
+                    app ->
+
+                appKey(
+                    app
+                ) ==
+                    sourceAppKey
+            }
+
+    val targetIndex =
+        reordered
+            .indexOfFirst {
+                    app ->
+
+                appKey(
+                    app
+                ) ==
+                    targetAppKey
+            }
+
+    if (
+        sourceIndex < 0 ||
+        targetIndex < 0 ||
+        sourceIndex ==
+            targetIndex
+    ) {
+        return apps
+    }
+
+    /*
+     * The Home layout is positional: dropping one favorite over
+     * another swaps only those two slots. Apps between them keep
+     * their exact positions.
+     */
+    val sourceApp =
+        reordered[
+            sourceIndex
+        ]
+
+    reordered[
+        sourceIndex
+    ] =
+        reordered[
+            targetIndex
+        ]
+
+    reordered[
+        targetIndex
+    ] =
+        sourceApp
+
+    return reordered
+}
+
+private fun appKey(
+    app: InstalledApp
+): String {
+    return "${app.user.hashCode()}:" +
+        app.componentName
+            .flattenToString()
 }
 
 private fun wallpaperTextStyle(

@@ -661,7 +661,7 @@ fun FavoritePickerScreen(
                                         sourceKey !=
                                             targetKey
                                     ) {
-                                        moveSelectedApp(
+                                        swapSelectedApps(
                                             selectedApps =
                                                 selectedApps,
                                             sourceAppKey =
@@ -1746,7 +1746,7 @@ private fun findSelectedDropTarget(
         ?.first
 }
 
-private fun moveSelectedApp(
+private fun swapSelectedApps(
     selectedApps:
         MutableList<InstalledApp>,
     sourceAppKey: String,
@@ -1783,15 +1783,27 @@ private fun moveSelectedApp(
         return
     }
 
-    val movedApp =
-        selectedApps.removeAt(
+    /*
+     * Favorites are intentionally positional rather than list-like.
+     * Dropping one favorite over another exchanges only those two
+     * positions instead of shifting every app between them.
+     */
+    val sourceApp =
+        selectedApps[
             sourceIndex
-        )
+        ]
 
-    selectedApps.add(
-        targetIndex,
-        movedApp
-    )
+    selectedApps[
+        sourceIndex
+    ] =
+        selectedApps[
+            targetIndex
+        ]
+
+    selectedApps[
+        targetIndex
+    ] =
+        sourceApp
 }
 
 private fun toggleSelection(
@@ -1905,3 +1917,4 @@ private fun appKey(
 
 private const val SELECTED_GRID_KEY_PREFIX =
     "selected:"
+

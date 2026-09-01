@@ -503,6 +503,25 @@ class MainActivity :
                                                 )
                                         }
                                 },
+                                onReorderFavorites = {
+                                        reorderedApps ->
+
+                                    /*
+                                     * Reordering on Home is optimistic: the
+                                     * new order is visible on the next frame,
+                                     * then Room persists the same positions.
+                                     */
+                                    favoriteApps =
+                                        reorderedApps
+
+                                    coroutineScope
+                                        .launch {
+                                            favoriteRepository
+                                                .replaceFavorites(
+                                                    reorderedApps
+                                                )
+                                        }
+                                },
                                 onUninstallApp = {
                                         app ->
 

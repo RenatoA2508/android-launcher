@@ -27,13 +27,11 @@
             android:label="@string/app_name"
             android:theme="@style/Theme.Launcher">
 
-            <!-- Allows the app to be launched normally during development -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Declares this Activity as a Home/Launcher candidate -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
@@ -41,6 +39,18 @@
             </intent-filter>
 
         </activity>
+
+        <service
+            android:name=".notifications.LauncherNotificationListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+
+        </service>
 
     </application>
 

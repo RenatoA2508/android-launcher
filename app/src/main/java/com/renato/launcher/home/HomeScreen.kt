@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -66,7 +67,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.notifications.NotificationBadgeStore
 import com.renato.launcher.ui.components.AppContextMenu
+import com.renato.launcher.ui.components.LauncherAppIconWithBadge
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 import com.renato.launcher.ui.interactions.launcherAppClickable
 import com.renato.launcher.ui.interactions.launcherCombinedClickable
@@ -90,6 +93,11 @@ fun HomeScreen(
 ) {
     val wallpaperTextColor =
         rememberWallpaperTextColor()
+
+    val notificationCounts by
+        NotificationBadgeStore
+            .counts
+            .collectAsState()
 
     val density =
         LocalDensity.current
@@ -233,6 +241,15 @@ fun HomeScreen(
                         onReorderFavorites,
                     onUninstallApp =
                         onUninstallApp,
+                    notificationCountFor = { app ->
+                        NotificationBadgeStore
+                            .countFor(
+                                counts =
+                                    notificationCounts,
+                                app =
+                                    app
+                            )
+                    },
                     textColor =
                         wallpaperTextColor
                 )
@@ -435,6 +452,7 @@ private fun FavoriteAppsGrid(
     onRemoveFavorite: (InstalledApp) -> Unit,
     onReorderFavorites: (List<InstalledApp>) -> Unit,
     onUninstallApp: (InstalledApp) -> Unit,
+    notificationCountFor: (InstalledApp) -> Int,
     textColor: Color
 ) {
     /*
@@ -623,6 +641,10 @@ private fun FavoriteAppsGrid(
                             FavoriteAppItem(
                                 app =
                                     app,
+                                notificationCount =
+                                    notificationCountFor(
+                                        app
+                                    ),
                                 isGestureActive =
                                     isGestureActive,
                                 isDragging =
@@ -875,6 +897,7 @@ private fun FavoriteAppsGrid(
 @Composable
 private fun FavoriteAppItem(
     app: InstalledApp,
+    notificationCount: Int,
     isGestureActive: Boolean,
     isDragging: Boolean,
     isDropTarget: Boolean,
@@ -1297,15 +1320,15 @@ private fun FavoriteAppItem(
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
-            Image(
+            LauncherAppIconWithBadge(
                 bitmap =
                     iconBitmap,
                 contentDescription =
                     app.label,
-                modifier =
-                    Modifier.size(
-                        30.dp
-                    )
+                iconSize =
+                    30.dp,
+                notificationCount =
+                    notificationCount
             )
 
             Spacer(

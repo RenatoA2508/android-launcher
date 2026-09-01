@@ -6,6 +6,10 @@ import android.content.ContextWrapper
 import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -180,6 +184,43 @@ fun FavoritePickerScreen(
                 Offset.Zero
             )
         }
+
+    /*
+     * Local settle animation for the selected-app grid. The editor remains
+     * transactional; this state only controls what the swap looks like.
+     */
+    var swapAnimationSequence by
+        remember {
+            mutableStateOf(
+                0L
+            )
+        }
+
+    var swapAnimationRequest by
+        remember {
+            mutableStateOf<SwapAnimationRequest?>(
+                null
+            )
+        }
+
+    fun requestSettleAnimation(
+        offsets: Map<String, Offset>
+    ) {
+        if (offsets.isEmpty()) {
+            return
+        }
+
+        swapAnimationSequence +=
+            1L
+
+        swapAnimationRequest =
+            SwapAnimationRequest(
+                id =
+                    swapAnimationSequence,
+                offsets =
+                    offsets
+            )
+    }
 
     val hapticFeedback =
         LocalHapticFeedback.current
@@ -561,6 +602,30 @@ fun FavoritePickerScreen(
                                 dropTargetSelectedAppKey ==
                                     key
 
+                            val settleRequest =
+                                swapAnimationRequest
+
+                            val settleOffset =
+                                settleRequest
+                                    ?.offsets
+                                    ?.get(
+                                        key
+                                    )
+                                    ?: Offset.Zero
+
+                            val settleAnimationToken =
+                                if (
+                                    settleRequest
+                                        ?.offsets
+                                        ?.containsKey(
+                                            key
+                                        ) == true
+                                ) {
+                                    settleRequest.id
+                                } else {
+                                    null
+                                }
+
                             SelectedAppItem(
                                 app =
                                     app,
@@ -580,6 +645,10 @@ fun FavoritePickerScreen(
                                     } else {
                                         Offset.Zero
                                     },
+                                settleOffset =
+                                    settleOffset,
+                                settleAnimationToken =
+                                    settleAnimationToken,
                                 onDragStart = {
                                         touchOffset ->
 
@@ -661,6 +730,81 @@ fun FavoritePickerScreen(
                                         sourceKey !=
                                             targetKey
                                     ) {
+                                        val sourceGridKey =
+                                            SELECTED_GRID_KEY_PREFIX +
+                                                sourceKey
+
+                                        val targetGridKey =
+                                            SELECTED_GRID_KEY_PREFIX +
+                                                targetKey
+
+                                        val sourceItemInfo =
+                                            normalGridState
+                                                .layoutInfo
+                                                .visibleItemsInfo
+                                                .firstOrNull {
+                                                        item ->
+
+                                                    item.key ==
+                                                        sourceGridKey
+                                                }
+
+                                        val targetItemInfo =
+                                            normalGridState
+                                                .layoutInfo
+                                                .visibleItemsInfo
+                                                .firstOrNull {
+                                                        item ->
+
+                                                    item.key ==
+                                                        targetGridKey
+                                                }
+
+                                        if (
+                                            sourceItemInfo != null &&
+                                            targetItemInfo != null
+                                        ) {
+                                            val sourceOldPosition =
+                                                Offset(
+                                                    sourceItemInfo
+                                                        .offset
+                                                        .x
+                                                        .toFloat(),
+                                                    sourceItemInfo
+                                                        .offset
+                                                        .y
+                                                        .toFloat()
+                                                )
+
+                                            val targetOldPosition =
+                                                Offset(
+                                                    targetItemInfo
+                                                        .offset
+                                                        .x
+                                                        .toFloat(),
+                                                    targetItemInfo
+                                                        .offset
+                                                        .y
+                                                        .toFloat()
+                                                )
+
+                                            requestSettleAnimation(
+                                                mapOf(
+                                                    sourceKey to
+                                                        (
+                                                            sourceOldPosition +
+                                                                draggedTranslation -
+                                                                targetOldPosition
+                                                        ),
+                                                    targetKey to
+                                                        (
+                                                            targetOldPosition -
+                                                                sourceOldPosition
+                                                        )
+                                                )
+                                            )
+                                        }
+
                                         swapSelectedApps(
                                             selectedApps =
                                                 selectedApps,
@@ -669,11 +813,38 @@ fun FavoritePickerScreen(
                                             targetAppKey =
                                                 targetKey
                                         )
+                                    } else if (
+                                        sourceKey != null &&
+                                        draggedTranslation !=
+                                            Offset.Zero
+                                    ) {
+                                        requestSettleAnimation(
+                                            mapOf(
+                                                sourceKey to
+                                                    draggedTranslation
+                                            )
+                                        )
                                     }
 
                                     clearSelectedDrag()
                                 },
                                 onDragCancel = {
+                                    val sourceKey =
+                                        draggedSelectedAppKey
+
+                                    if (
+                                        sourceKey != null &&
+                                        draggedTranslation !=
+                                            Offset.Zero
+                                    ) {
+                                        requestSettleAnimation(
+                                            mapOf(
+                                                sourceKey to
+                                                    draggedTranslation
+                                            )
+                                        )
+                                    }
+
                                     clearSelectedDrag()
                                 },
                                 onRemove = {
@@ -1143,6 +1314,8 @@ private fun SelectedAppItem(
     isDragging: Boolean,
     isDropTarget: Boolean,
     dragTranslation: Offset,
+    settleOffset: Offset,
+    settleAnimationToken: Long?,
     onDragStart: (Offset) -> Unit,
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
@@ -1169,53 +1342,142 @@ private fun SelectedAppItem(
             }
         }
 
-    val dropTargetBorder =
-        if (
-            isDropTarget
+    val settleProgress =
+        remember(
+            settleAnimationToken
         ) {
-            MaterialTheme
-                .colorScheme
-                .primary
-                .copy(
-                    alpha =
-                        0.88f
-                )
-        } else {
-            Color.Transparent
+            Animatable(
+                if (
+                    settleAnimationToken != null
+                ) {
+                    1f
+                } else {
+                    0f
+                }
+            )
         }
+
+    LaunchedEffect(
+        settleAnimationToken
+    ) {
+        if (
+            settleAnimationToken != null
+        ) {
+            settleProgress.animateTo(
+                targetValue =
+                    0f,
+                animationSpec =
+                    spring(
+                        dampingRatio =
+                            0.86f,
+                        stiffness =
+                            700f
+                    )
+            )
+        }
+    }
+
+    val dragLiftProgress by
+        animateFloatAsState(
+            targetValue =
+                if (
+                    isDragging
+                ) {
+                    1f
+                } else {
+                    0f
+                },
+            animationSpec =
+                tween(
+                    durationMillis =
+                        110
+                ),
+            label =
+                "favoriteDragLift"
+        )
+
+    val dropTargetProgress by
+        animateFloatAsState(
+            targetValue =
+                if (
+                    isDropTarget
+                ) {
+                    1f
+                } else {
+                    0f
+                },
+            animationSpec =
+                tween(
+                    durationMillis =
+                        100
+                ),
+            label =
+                "favoriteDropTarget"
+        )
+
+    val isSettling =
+        settleAnimationToken != null &&
+            settleProgress.value >
+                0.001f
+
+    val animatedSettleTranslation =
+        settleOffset *
+            settleProgress.value
+
+    val dropTargetBorder =
+        MaterialTheme
+            .colorScheme
+            .primary
+            .copy(
+                alpha =
+                    0.88f *
+                        dropTargetProgress
+            )
 
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .zIndex(
-                    if (
-                        isDragging
-                    ) {
-                        2f
-                    } else {
-                        0f
+                    when {
+                        isDragging ->
+                            2f
+
+                        isSettling ->
+                            1f
+
+                        else ->
+                            0f
                     }
                 )
                 .graphicsLayer {
-                    if (
-                        isDragging
-                    ) {
-                        translationX =
+                    translationX =
+                        if (
+                            isDragging
+                        ) {
                             dragTranslation.x
+                        } else {
+                            animatedSettleTranslation.x
+                        }
 
-                        translationY =
+                    translationY =
+                        if (
+                            isDragging
+                        ) {
                             dragTranslation.y
+                        } else {
+                            animatedSettleTranslation.y
+                        }
 
-                        shadowElevation =
-                            dragElevationPx
+                    shadowElevation =
+                        dragElevationPx *
+                            dragLiftProgress
 
-                        this.shape =
-                            tileShape
+                    this.shape =
+                        tileShape
 
-                        clip =
-                            false
-                    }
+                    clip =
+                        false
                 }
                 .clip(
                     tileShape
@@ -1226,30 +1488,20 @@ private fun SelectedAppItem(
                         .primaryContainer
                         .copy(
                             alpha =
-                                if (
-                                    isDragging
-                                ) {
-                                    0.94f
-                                } else {
-                                    0.72f
-                                }
+                                0.72f +
+                                    (0.22f *
+                                        dragLiftProgress) +
+                                    (0.05f *
+                                        dropTargetProgress)
                         )
                 )
-                .then(
-                    if (
-                        isDropTarget
-                    ) {
-                        Modifier.border(
-                            width =
-                                2.dp,
-                            color =
-                                dropTargetBorder,
-                            shape =
-                                tileShape
-                        )
-                    } else {
-                        Modifier
-                    }
+                .border(
+                    width =
+                        2.dp,
+                    color =
+                        dropTargetBorder,
+                    shape =
+                        tileShape
                 )
                 .pointerInput(
                     app.componentName,
@@ -1625,6 +1877,11 @@ private fun FavoritePickerWindowEffect() {
         }
     }
 }
+
+private data class SwapAnimationRequest(
+    val id: Long,
+    val offsets: Map<String, Offset>
+)
 
 private fun selectedGridKey(
     app: InstalledApp

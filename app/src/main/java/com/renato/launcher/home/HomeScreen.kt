@@ -1,6 +1,10 @@
 package com.renato.launcher.home
 
 import android.text.format.DateFormat
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -470,6 +475,48 @@ private fun FavoriteAppsGrid(
             )
         }
 
+    /*
+     * FLIP-style settle animation.
+     *
+     * When a swap is committed, Home immediately adopts the new logical
+     * order. These offsets visually keep the two affected apps where they
+     * were for that first frame, then a spring carries them into their new
+     * slots. The dragged app starts from the exact point where the finger
+     * released it instead of teleporting.
+     */
+    var swapAnimationSequence by
+        remember {
+            mutableStateOf(
+                0L
+            )
+        }
+
+    var swapAnimationRequest by
+        remember {
+            mutableStateOf<SwapAnimationRequest?>(
+                null
+            )
+        }
+
+    fun requestSettleAnimation(
+        offsets: Map<String, Offset>
+    ) {
+        if (offsets.isEmpty()) {
+            return
+        }
+
+        swapAnimationSequence +=
+            1L
+
+        swapAnimationRequest =
+            SwapAnimationRequest(
+                id =
+                    swapAnimationSequence,
+                offsets =
+                    offsets
+            )
+    }
+
     fun clearDrag() {
         draggedAppKey =
             null
@@ -546,154 +593,267 @@ private fun FavoriteAppsGrid(
                             dropTargetAppKey ==
                                 key
 
-                        FavoriteAppItem(
-                            app =
-                                app,
-                            isGestureActive =
-                                isGestureActive,
-                            isDragging =
-                                isDragging,
-                            isDropTarget =
-                                isDropTarget,
-                            dragTranslation =
-                                if (
-                                    isGestureActive
-                                ) {
-                                    draggedTranslation
-                                } else {
-                                    Offset.Zero
-                                },
-                            onBoundsChanged = {
-                                    bounds ->
+                        val settleRequest =
+                            swapAnimationRequest
 
-                                itemBoundsByKey[
+                        val settleOffset =
+                            settleRequest
+                                ?.offsets
+                                ?.get(
                                     key
-                                ] =
-                                    bounds
-                            },
-                            onClick = {
-                                onAppClick(
-                                    app
                                 )
-                            },
-                            onAppInfo = {
-                                onAppInfo(
-                                    app
-                                )
-                            },
-                            onRemoveFavorite = {
-                                onRemoveFavorite(
-                                    app
-                                )
-                            },
-                            onUninstallApp = {
-                                onUninstallApp(
-                                    app
-                                )
-                            },
-                            onDragStart = {
-                                    touchOffset ->
+                                ?: Offset.Zero
 
-                                val bounds =
+                        val settleAnimationToken =
+                            if (
+                                settleRequest
+                                    ?.offsets
+                                    ?.containsKey(
+                                        key
+                                    ) == true
+                            ) {
+                                settleRequest.id
+                            } else {
+                                null
+                            }
+
+                        key(
+                            key
+                        ) {
+                            FavoriteAppItem(
+                                app =
+                                    app,
+                                isGestureActive =
+                                    isGestureActive,
+                                isDragging =
+                                    isDragging,
+                                isDropTarget =
+                                    isDropTarget,
+                                dragTranslation =
+                                    if (
+                                        isGestureActive
+                                    ) {
+                                        draggedTranslation
+                                    } else {
+                                        Offset.Zero
+                                    },
+                                settleOffset =
+                                    settleOffset,
+                                settleAnimationToken =
+                                    settleAnimationToken,
+                                onBoundsChanged = {
+                                        bounds ->
+
                                     itemBoundsByKey[
                                         key
-                                    ]
+                                    ] =
+                                        bounds
+                                },
+                                onClick = {
+                                    onAppClick(
+                                        app
+                                    )
+                                },
+                                onAppInfo = {
+                                    onAppInfo(
+                                        app
+                                    )
+                                },
+                                onRemoveFavorite = {
+                                    onRemoveFavorite(
+                                        app
+                                    )
+                                },
+                                onUninstallApp = {
+                                    onUninstallApp(
+                                        app
+                                    )
+                                },
+                                onDragStart = {
+                                        touchOffset ->
 
-                                if (
-                                    bounds != null
-                                ) {
-                                    draggedAppKey =
-                                        key
-
-                                    dropTargetAppKey =
-                                        null
-
-                                    draggedTranslation =
-                                        Offset.Zero
-
-                                    dragPointerInRoot =
-                                        Offset(
-                                            x =
-                                                bounds.left +
-                                                    touchOffset.x,
-                                            y =
-                                                bounds.top +
-                                                    touchOffset.y
-                                        )
-                                }
-                            },
-                            onDrag = {
-                                    dragAmount ->
-
-                                if (
-                                    draggedAppKey ==
-                                    key
-                                ) {
-                                    draggedTranslation +=
-                                        dragAmount
-
-                                    dragPointerInRoot +=
-                                        dragAmount
-
-                                    dropTargetAppKey =
-                                        findHomeDropTarget(
-                                            apps =
-                                                apps,
-                                            itemBoundsByKey =
-                                                itemBoundsByKey,
-                                            draggedAppKey =
-                                                key,
-                                            pointer =
-                                                dragPointerInRoot
-                                        )
-                                }
-                            },
-                            onDragEnd = {
-                                val sourceKey =
-                                    draggedAppKey
-
-                                val targetKey =
-                                    dropTargetAppKey
-
-                                if (
-                                    sourceKey != null &&
-                                    targetKey != null &&
-                                    sourceKey !=
-                                        targetKey
-                                ) {
-                                    val reorderedApps =
-                                        swapFavoriteApps(
-                                            apps =
-                                                apps,
-                                            sourceAppKey =
-                                                sourceKey,
-                                            targetAppKey =
-                                                targetKey
-                                        )
+                                    val bounds =
+                                        itemBoundsByKey[
+                                            key
+                                        ]
 
                                     if (
-                                        reorderedApps !=
-                                        apps
+                                        bounds != null
                                     ) {
-                                        onReorderFavorites(
-                                            reorderedApps
+                                        draggedAppKey =
+                                            key
+
+                                        dropTargetAppKey =
+                                            null
+
+                                        draggedTranslation =
+                                            Offset.Zero
+
+                                        dragPointerInRoot =
+                                            Offset(
+                                                x =
+                                                    bounds.left +
+                                                        touchOffset.x,
+                                                y =
+                                                    bounds.top +
+                                                        touchOffset.y
+                                            )
+                                    }
+                                },
+                                onDrag = {
+                                        dragAmount ->
+
+                                    if (
+                                        draggedAppKey ==
+                                        key
+                                    ) {
+                                        draggedTranslation +=
+                                            dragAmount
+
+                                        dragPointerInRoot +=
+                                            dragAmount
+
+                                        dropTargetAppKey =
+                                            findHomeDropTarget(
+                                                apps =
+                                                    apps,
+                                                itemBoundsByKey =
+                                                    itemBoundsByKey,
+                                                draggedAppKey =
+                                                    key,
+                                                pointer =
+                                                    dragPointerInRoot
+                                            )
+                                    }
+                                },
+                                onDragEnd = {
+                                    val sourceKey =
+                                        draggedAppKey
+
+                                    val targetKey =
+                                        dropTargetAppKey
+
+                                    if (
+                                        sourceKey != null &&
+                                        targetKey != null &&
+                                        sourceKey !=
+                                            targetKey
+                                    ) {
+                                        val sourceBounds =
+                                            itemBoundsByKey[
+                                                sourceKey
+                                            ]
+
+                                        val targetBounds =
+                                            itemBoundsByKey[
+                                                targetKey
+                                            ]
+
+                                        val reorderedApps =
+                                            swapFavoriteApps(
+                                                apps =
+                                                    apps,
+                                                sourceAppKey =
+                                                    sourceKey,
+                                                targetAppKey =
+                                                    targetKey
+                                            )
+
+                                        if (
+                                            reorderedApps !=
+                                            apps
+                                        ) {
+                                            if (
+                                                sourceBounds != null &&
+                                                targetBounds != null
+                                            ) {
+                                                val sourceOldPosition =
+                                                    Offset(
+                                                        sourceBounds.left,
+                                                        sourceBounds.top
+                                                    )
+
+                                                val targetOldPosition =
+                                                    Offset(
+                                                        targetBounds.left,
+                                                        targetBounds.top
+                                                    )
+
+                                                /*
+                                                 * Source: start exactly where
+                                                 * the finger released it.
+                                                 *
+                                                 * Target: remain in its old
+                                                 * slot for the first frame.
+                                                 */
+                                                requestSettleAnimation(
+                                                    mapOf(
+                                                        sourceKey to
+                                                            (
+                                                                sourceOldPosition +
+                                                                    draggedTranslation -
+                                                                    targetOldPosition
+                                                            ),
+                                                        targetKey to
+                                                            (
+                                                                targetOldPosition -
+                                                                    sourceOldPosition
+                                                            )
+                                                    )
+                                                )
+                                            }
+
+                                            onReorderFavorites(
+                                                reorderedApps
+                                            )
+                                        }
+                                    } else if (
+                                        sourceKey != null &&
+                                        draggedTranslation !=
+                                            Offset.Zero
+                                    ) {
+                                        /*
+                                         * Invalid drop: glide back to the
+                                         * original slot instead of snapping.
+                                         */
+                                        requestSettleAnimation(
+                                            mapOf(
+                                                sourceKey to
+                                                    draggedTranslation
+                                            )
                                         )
                                     }
-                                }
 
-                                clearDrag()
-                            },
-                            onDragCancel = {
-                                clearDrag()
-                            },
-                            textColor =
-                                textColor,
-                            modifier =
-                                Modifier
-                                    .weight(
-                                        1f
-                                    )
-                        )
+                                    clearDrag()
+                                },
+                                onDragCancel = {
+                                    val sourceKey =
+                                        draggedAppKey
+
+                                    if (
+                                        sourceKey != null &&
+                                        draggedTranslation !=
+                                            Offset.Zero
+                                    ) {
+                                        requestSettleAnimation(
+                                            mapOf(
+                                                sourceKey to
+                                                    draggedTranslation
+                                            )
+                                        )
+                                    }
+
+                                    clearDrag()
+                                },
+                                textColor =
+                                    textColor,
+                                modifier =
+                                    Modifier
+                                        .weight(
+                                            1f
+                                        )
+                            )
+                        }
                     }
 
                     if (
@@ -719,6 +879,8 @@ private fun FavoriteAppItem(
     isDragging: Boolean,
     isDropTarget: Boolean,
     dragTranslation: Offset,
+    settleOffset: Offset,
+    settleAnimationToken: Long?,
     onBoundsChanged: (Rect) -> Unit,
     onClick: () -> Unit,
     onAppInfo: () -> Unit,
@@ -761,6 +923,93 @@ private fun FavoriteAppItem(
             }
         }
 
+    /*
+     * Starting at 1f on a new token is important: the very first frame after
+     * the logical swap is already visually inverted to the pre-swap position.
+     * From there the spring settles naturally to the new slot.
+     */
+    val settleProgress =
+        remember(
+            settleAnimationToken
+        ) {
+            Animatable(
+                if (
+                    settleAnimationToken != null
+                ) {
+                    1f
+                } else {
+                    0f
+                }
+            )
+        }
+
+    LaunchedEffect(
+        settleAnimationToken
+    ) {
+        if (
+            settleAnimationToken != null
+        ) {
+            settleProgress.animateTo(
+                targetValue =
+                    0f,
+                animationSpec =
+                    spring(
+                        dampingRatio =
+                            0.86f,
+                        stiffness =
+                            700f
+                    )
+            )
+        }
+    }
+
+    val dragLiftProgress by
+        animateFloatAsState(
+            targetValue =
+                if (
+                    isDragging
+                ) {
+                    1f
+                } else {
+                    0f
+                },
+            animationSpec =
+                tween(
+                    durationMillis =
+                        110
+                ),
+            label =
+                "homeDragLift"
+        )
+
+    val dropTargetProgress by
+        animateFloatAsState(
+            targetValue =
+                if (
+                    isDropTarget
+                ) {
+                    1f
+                } else {
+                    0f
+                },
+            animationSpec =
+                tween(
+                    durationMillis =
+                        100
+                ),
+            label =
+                "homeDropTarget"
+        )
+
+    val isSettling =
+        settleAnimationToken != null &&
+            settleProgress.value >
+                0.001f
+
+    val animatedSettleTranslation =
+        settleOffset *
+            settleProgress.value
+
     var menuExpanded by
         remember(
             app.componentName,
@@ -782,23 +1031,20 @@ private fun FavoriteAppItem(
             .surface
             .copy(
                 alpha =
-                    if (
-                        isDragging
-                    ) {
-                        0.86f
-                    } else {
-                        0.58f
-                    }
+                    0.58f +
+                        (0.28f *
+                            dragLiftProgress)
             )
 
+    /*
+     * Home sits directly over the wallpaper, so using Material primary here
+     * can create a strong blue/palette-colored outline that feels detached
+     * from the rest of the surface. Reuse the adaptive wallpaper text color
+     * instead: on a dark wallpaper it becomes a soft white highlight, and on
+     * a light wallpaper it naturally becomes dark.
+     */
     val dropTargetColor =
-        MaterialTheme
-            .colorScheme
-            .primary
-            .copy(
-                alpha =
-                    0.92f
-            )
+        textColor
 
     /*
      * Gesture contract on Home:
@@ -841,39 +1087,45 @@ private fun FavoriteAppItem(
                     )
                 }
                 .zIndex(
-                    if (
-                        isGestureActive
-                    ) {
-                        3f
-                    } else {
-                        0f
+                    when {
+                        isGestureActive ->
+                            3f
+
+                        isSettling ->
+                            1f
+
+                        else ->
+                            0f
                     }
                 )
                 .graphicsLayer {
-                    if (
-                        isGestureActive
-                    ) {
-                        translationX =
+                    translationX =
+                        if (
+                            isGestureActive
+                        ) {
                             dragTranslation.x
+                        } else {
+                            animatedSettleTranslation.x
+                        }
 
-                        translationY =
+                    translationY =
+                        if (
+                            isGestureActive
+                        ) {
                             dragTranslation.y
+                        } else {
+                            animatedSettleTranslation.y
+                        }
 
-                        shadowElevation =
-                            if (
-                                isDragging
-                            ) {
-                                dragElevationPx
-                            } else {
-                                0f
-                            }
+                    shadowElevation =
+                        dragElevationPx *
+                            dragLiftProgress
 
-                        shape =
-                            itemShape
+                    shape =
+                        itemShape
 
-                        clip =
-                            false
-                    }
+                    clip =
+                        false
                 }
                 .then(
                     if (
@@ -890,22 +1142,27 @@ private fun FavoriteAppItem(
                         Modifier
                     }
                 )
-                .then(
-                    if (
-                        isDropTarget
-                    ) {
-                        Modifier
-                            .border(
-                                width =
-                                    2.dp,
-                                color =
-                                    dropTargetColor,
-                                shape =
-                                    itemShape
-                            )
-                    } else {
-                        Modifier
-                    }
+                .background(
+                    color =
+                        dropTargetColor.copy(
+                            alpha =
+                                0.045f *
+                                    dropTargetProgress
+                        ),
+                    shape =
+                        itemShape
+                )
+                .border(
+                    width =
+                        1.dp,
+                    color =
+                        dropTargetColor.copy(
+                            alpha =
+                                0.30f *
+                                    dropTargetProgress
+                        ),
+                    shape =
+                        itemShape
                 )
     ) {
         Row(
@@ -1113,6 +1370,11 @@ private fun FavoriteAppItem(
         )
     }
 }
+
+private data class SwapAnimationRequest(
+    val id: Long,
+    val offsets: Map<String, Offset>
+)
 
 private fun findHomeDropTarget(
     apps: List<InstalledApp>,

@@ -6,16 +6,13 @@ import android.content.ContextWrapper
 import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -54,12 +52,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -67,12 +70,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.search.AppSearchEngine
 import com.renato.launcher.ui.components.LauncherSearchBar
 import com.renato.launcher.ui.components.LauncherSearchLauncher
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
+import com.renato.launcher.ui.interactions.launcherAppClickable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -143,6 +148,82 @@ fun FavoritePickerScreen(
 
     val searchGridState =
         rememberLazyGridState()
+
+    /*
+     * Drag state belongs only to the selected-app section.
+     *
+     * The editor remains transactional:
+     * dragging changes the local order immediately, but Room is
+     * updated only when the user presses Listo. Cancelar therefore
+     * still discards the entire edit session.
+     */
+    var draggedSelectedAppKey by
+        remember {
+            mutableStateOf<String?>(
+                null
+            )
+        }
+
+    var dropTargetSelectedAppKey by
+        remember {
+            mutableStateOf<String?>(
+                null
+            )
+        }
+
+    var draggedTranslation by
+        remember {
+            mutableStateOf(
+                Offset.Zero
+            )
+        }
+
+    var dragPointerInGrid by
+        remember {
+            mutableStateOf(
+                Offset.Zero
+            )
+        }
+
+    /*
+     * Local settle animation for the selected-app grid. The editor remains
+     * transactional; this state only controls what the swap looks like.
+     */
+    var swapAnimationSequence by
+        remember {
+            mutableStateOf(
+                0L
+            )
+        }
+
+    var swapAnimationRequest by
+        remember {
+            mutableStateOf<SwapAnimationRequest?>(
+                null
+            )
+        }
+
+    fun requestSettleAnimation(
+        offsets: Map<String, Offset>
+    ) {
+        if (offsets.isEmpty()) {
+            return
+        }
+
+        swapAnimationSequence +=
+            1L
+
+        swapAnimationRequest =
+            SwapAnimationRequest(
+                id =
+                    swapAnimationSequence,
+                offsets =
+                    offsets
+            )
+    }
+
+    val hapticFeedback =
+        LocalHapticFeedback.current
 
     val focusRequester =
         remember {
@@ -223,6 +304,20 @@ fun FavoritePickerScreen(
             }
         }
 
+    fun clearSelectedDrag() {
+        draggedSelectedAppKey =
+            null
+
+        dropTargetSelectedAppKey =
+            null
+
+        draggedTranslation =
+            Offset.Zero
+
+        dragPointerInGrid =
+            Offset.Zero
+    }
+
     fun exitSearch() {
 
         if (
@@ -275,6 +370,8 @@ fun FavoritePickerScreen(
         if (
             searchMode
         ) {
+
+            clearSelectedDrag()
 
             withFrameNanos { }
 
@@ -420,7 +517,10 @@ fun FavoritePickerScreen(
                 verticalArrangement =
                     Arrangement.spacedBy(
                         8.dp
-                    )
+                    ),
+                userScrollEnabled =
+                    draggedSelectedAppKey ==
+                        null
             ) {
 
                 /*
@@ -489,6 +589,43 @@ fun FavoritePickerScreen(
                                     app
                                 )
 
+                            val selectedGridKey =
+                                selectedGridKey(
+                                    app
+                                )
+
+                            val isDragging =
+                                draggedSelectedAppKey ==
+                                    key
+
+                            val isDropTarget =
+                                dropTargetSelectedAppKey ==
+                                    key
+
+                            val settleRequest =
+                                swapAnimationRequest
+
+                            val settleOffset =
+                                settleRequest
+                                    ?.offsets
+                                    ?.get(
+                                        key
+                                    )
+                                    ?: Offset.Zero
+
+                            val settleAnimationToken =
+                                if (
+                                    settleRequest
+                                        ?.offsets
+                                        ?.containsKey(
+                                            key
+                                        ) == true
+                                ) {
+                                    settleRequest.id
+                                } else {
+                                    null
+                                }
+
                             SelectedAppItem(
                                 app =
                                     app,
@@ -496,8 +633,221 @@ fun FavoritePickerScreen(
                                     selectionPositions[
                                         key
                                     ] ?: 0,
-                                onRemove = {
+                                isDragging =
+                                    isDragging,
+                                isDropTarget =
+                                    isDropTarget,
+                                dragTranslation =
+                                    if (
+                                        isDragging
+                                    ) {
+                                        draggedTranslation
+                                    } else {
+                                        Offset.Zero
+                                    },
+                                settleOffset =
+                                    settleOffset,
+                                settleAnimationToken =
+                                    settleAnimationToken,
+                                onDragStart = {
+                                        touchOffset ->
 
+                                    val itemInfo =
+                                        normalGridState
+                                            .layoutInfo
+                                            .visibleItemsInfo
+                                            .firstOrNull {
+                                                    item ->
+
+                                                item.key ==
+                                                    selectedGridKey
+                                            }
+
+                                    if (
+                                        itemInfo != null
+                                    ) {
+                                        draggedSelectedAppKey =
+                                            key
+
+                                        dropTargetSelectedAppKey =
+                                            null
+
+                                        draggedTranslation =
+                                            Offset.Zero
+
+                                        dragPointerInGrid =
+                                            Offset(
+                                                x =
+                                                    itemInfo.offset.x
+                                                        .toFloat() +
+                                                        touchOffset.x,
+                                                y =
+                                                    itemInfo.offset.y
+                                                        .toFloat() +
+                                                        touchOffset.y
+                                            )
+
+                                        hapticFeedback
+                                            .performHapticFeedback(
+                                                HapticFeedbackType.LongPress
+                                            )
+                                    }
+                                },
+                                onDrag = {
+                                        dragAmount ->
+
+                                    if (
+                                        draggedSelectedAppKey ==
+                                            key
+                                    ) {
+                                        draggedTranslation +=
+                                            dragAmount
+
+                                        dragPointerInGrid +=
+                                            dragAmount
+
+                                        dropTargetSelectedAppKey =
+                                            findSelectedDropTarget(
+                                                gridState =
+                                                    normalGridState,
+                                                draggedAppKey =
+                                                    key,
+                                                pointer =
+                                                    dragPointerInGrid
+                                            )
+                                    }
+                                },
+                                onDragEnd = {
+                                    val sourceKey =
+                                        draggedSelectedAppKey
+
+                                    val targetKey =
+                                        dropTargetSelectedAppKey
+
+                                    if (
+                                        sourceKey != null &&
+                                        targetKey != null &&
+                                        sourceKey !=
+                                            targetKey
+                                    ) {
+                                        val sourceGridKey =
+                                            SELECTED_GRID_KEY_PREFIX +
+                                                sourceKey
+
+                                        val targetGridKey =
+                                            SELECTED_GRID_KEY_PREFIX +
+                                                targetKey
+
+                                        val sourceItemInfo =
+                                            normalGridState
+                                                .layoutInfo
+                                                .visibleItemsInfo
+                                                .firstOrNull {
+                                                        item ->
+
+                                                    item.key ==
+                                                        sourceGridKey
+                                                }
+
+                                        val targetItemInfo =
+                                            normalGridState
+                                                .layoutInfo
+                                                .visibleItemsInfo
+                                                .firstOrNull {
+                                                        item ->
+
+                                                    item.key ==
+                                                        targetGridKey
+                                                }
+
+                                        if (
+                                            sourceItemInfo != null &&
+                                            targetItemInfo != null
+                                        ) {
+                                            val sourceOldPosition =
+                                                Offset(
+                                                    sourceItemInfo
+                                                        .offset
+                                                        .x
+                                                        .toFloat(),
+                                                    sourceItemInfo
+                                                        .offset
+                                                        .y
+                                                        .toFloat()
+                                                )
+
+                                            val targetOldPosition =
+                                                Offset(
+                                                    targetItemInfo
+                                                        .offset
+                                                        .x
+                                                        .toFloat(),
+                                                    targetItemInfo
+                                                        .offset
+                                                        .y
+                                                        .toFloat()
+                                                )
+
+                                            requestSettleAnimation(
+                                                mapOf(
+                                                    sourceKey to
+                                                        (
+                                                            sourceOldPosition +
+                                                                draggedTranslation -
+                                                                targetOldPosition
+                                                        ),
+                                                    targetKey to
+                                                        (
+                                                            targetOldPosition -
+                                                                sourceOldPosition
+                                                        )
+                                                )
+                                            )
+                                        }
+
+                                        swapSelectedApps(
+                                            selectedApps =
+                                                selectedApps,
+                                            sourceAppKey =
+                                                sourceKey,
+                                            targetAppKey =
+                                                targetKey
+                                        )
+                                    } else if (
+                                        sourceKey != null &&
+                                        draggedTranslation !=
+                                            Offset.Zero
+                                    ) {
+                                        requestSettleAnimation(
+                                            mapOf(
+                                                sourceKey to
+                                                    draggedTranslation
+                                            )
+                                        )
+                                    }
+
+                                    clearSelectedDrag()
+                                },
+                                onDragCancel = {
+                                    val sourceKey =
+                                        draggedSelectedAppKey
+
+                                    if (
+                                        sourceKey != null &&
+                                        draggedTranslation !=
+                                            Offset.Zero
+                                    ) {
+                                        requestSettleAnimation(
+                                            mapOf(
+                                                sourceKey to
+                                                    draggedTranslation
+                                            )
+                                        )
+                                    }
+
+                                    clearSelectedDrag()
+                                },
+                                onRemove = {
                                     removeSelectedApp(
                                         selectedApps =
                                             selectedApps,
@@ -901,6 +1251,7 @@ private fun SelectedAppsHeading() {
         Text(
             text =
                 "Toca una aplicación para quitarla. " +
+                    "Mantén pulsado y arrastra para cambiar su posición. " +
                     "El número indica su posición en Inicio.",
             fontSize =
                 13.sp,
@@ -960,37 +1311,176 @@ private fun EmptySelectionState() {
 private fun SelectedAppItem(
     app: InstalledApp,
     position: Int,
+    isDragging: Boolean,
+    isDropTarget: Boolean,
+    dragTranslation: Offset,
+    settleOffset: Offset,
+    settleAnimationToken: Long?,
+    onDragStart: (Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
     onRemove: () -> Unit
 ) {
-
     val iconBitmap =
         rememberLauncherAppIcon(
             app
         )
 
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
-    val indication =
-        LocalIndication.current
-
-    val shape =
+    val tileShape =
         RoundedCornerShape(
             20.dp
         )
+
+    val density =
+        LocalDensity.current
+
+    val dragElevationPx =
+        remember(density) {
+            with(density) {
+                12.dp.toPx()
+            }
+        }
+
+    val settleProgress =
+        remember(
+            settleAnimationToken
+        ) {
+            Animatable(
+                if (
+                    settleAnimationToken != null
+                ) {
+                    1f
+                } else {
+                    0f
+                }
+            )
+        }
+
+    LaunchedEffect(
+        settleAnimationToken
+    ) {
+        if (
+            settleAnimationToken != null
+        ) {
+            settleProgress.animateTo(
+                targetValue =
+                    0f,
+                animationSpec =
+                    spring(
+                        dampingRatio =
+                            0.86f,
+                        stiffness =
+                            700f
+                    )
+            )
+        }
+    }
+
+    val dragLiftProgress by
+        animateFloatAsState(
+            targetValue =
+                if (
+                    isDragging
+                ) {
+                    1f
+                } else {
+                    0f
+                },
+            animationSpec =
+                tween(
+                    durationMillis =
+                        110
+                ),
+            label =
+                "favoriteDragLift"
+        )
+
+    val dropTargetProgress by
+        animateFloatAsState(
+            targetValue =
+                if (
+                    isDropTarget
+                ) {
+                    1f
+                } else {
+                    0f
+                },
+            animationSpec =
+                tween(
+                    durationMillis =
+                        100
+                ),
+            label =
+                "favoriteDropTarget"
+        )
+
+    val isSettling =
+        settleAnimationToken != null &&
+            settleProgress.value >
+                0.001f
+
+    val animatedSettleTranslation =
+        settleOffset *
+            settleProgress.value
+
+    val dropTargetBorder =
+        MaterialTheme
+            .colorScheme
+            .primary
+            .copy(
+                alpha =
+                    0.88f *
+                        dropTargetProgress
+            )
 
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .pressScale(
-                    interactionSource =
-                        interactionSource
+                .zIndex(
+                    when {
+                        isDragging ->
+                            2f
+
+                        isSettling ->
+                            1f
+
+                        else ->
+                            0f
+                    }
                 )
+                .graphicsLayer {
+                    translationX =
+                        if (
+                            isDragging
+                        ) {
+                            dragTranslation.x
+                        } else {
+                            animatedSettleTranslation.x
+                        }
+
+                    translationY =
+                        if (
+                            isDragging
+                        ) {
+                            dragTranslation.y
+                        } else {
+                            animatedSettleTranslation.y
+                        }
+
+                    shadowElevation =
+                        dragElevationPx *
+                            dragLiftProgress
+
+                    this.shape =
+                        tileShape
+
+                    clip =
+                        false
+                }
                 .clip(
-                    shape
+                    tileShape
                 )
                 .background(
                     MaterialTheme
@@ -998,14 +1488,51 @@ private fun SelectedAppItem(
                         .primaryContainer
                         .copy(
                             alpha =
-                                0.72f
+                                0.72f +
+                                    (0.22f *
+                                        dragLiftProgress) +
+                                    (0.05f *
+                                        dropTargetProgress)
                         )
                 )
-                .clickable(
-                    interactionSource =
-                        interactionSource,
-                    indication =
-                        indication,
+                .border(
+                    width =
+                        2.dp,
+                    color =
+                        dropTargetBorder,
+                    shape =
+                        tileShape
+                )
+                .pointerInput(
+                    app.componentName,
+                    app.user
+                ) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart =
+                            onDragStart,
+                        onDragEnd =
+                            onDragEnd,
+                        onDragCancel =
+                            onDragCancel,
+                        onDrag = {
+                                change,
+                                dragAmount ->
+
+                            change.consume()
+
+                            onDrag(
+                                dragAmount
+                            )
+                        }
+                    )
+                }
+                .launcherAppClickable(
+                    enabled =
+                        !isDragging,
+                    shape =
+                        tileShape,
+                    onClickLabel =
+                        "Quitar ${app.label} de Favoritas",
                     onClick =
                         onRemove
                 )
@@ -1018,9 +1545,7 @@ private fun SelectedAppItem(
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
-
         Box {
-
             Image(
                 bitmap =
                     iconBitmap,
@@ -1076,7 +1601,6 @@ private fun AllAppsItem(
     selectionPosition: Int?,
     onToggle: () -> Unit
 ) {
-
     val iconBitmap =
         rememberLauncherAppIcon(
             app
@@ -1084,14 +1608,6 @@ private fun AllAppsItem(
 
     val isSelected =
         selectionPosition != null
-
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
-    val indication =
-        LocalIndication.current
 
     val shape =
         RoundedCornerShape(
@@ -1102,10 +1618,6 @@ private fun AllAppsItem(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .pressScale(
-                    interactionSource =
-                        interactionSource
-                )
                 .clip(
                     shape
                 )
@@ -1113,7 +1625,6 @@ private fun AllAppsItem(
                     if (
                         isSelected
                     ) {
-
                         MaterialTheme
                             .colorScheme
                             .primaryContainer
@@ -1121,17 +1632,19 @@ private fun AllAppsItem(
                                 alpha =
                                     0.42f
                             )
-
                     } else {
-
                         Color.Transparent
                     }
                 )
-                .clickable(
-                    interactionSource =
-                        interactionSource,
-                    indication =
-                        indication,
+                .launcherAppClickable(
+                    onClickLabel =
+                        if (
+                            isSelected
+                        ) {
+                            "Quitar ${app.label} de Favoritas"
+                        } else {
+                            "Agregar ${app.label} a Favoritas"
+                        },
                     onClick =
                         onToggle
                 )
@@ -1144,9 +1657,7 @@ private fun AllAppsItem(
         horizontalAlignment =
             Alignment.CenterHorizontally
     ) {
-
         Box {
-
             Image(
                 bitmap =
                     iconBitmap,
@@ -1161,7 +1672,6 @@ private fun AllAppsItem(
             if (
                 selectionPosition != null
             ) {
-
                 PositionBadge(
                     position =
                         selectionPosition,
@@ -1256,28 +1766,19 @@ private fun AnimatedButton(
     text: String,
     onClick: () -> Unit
 ) {
-
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
+    /*
+     * Material Button already provides the shared ripple
+     * feedback. The old press-scale animation is intentionally
+     * removed.
+     */
     Button(
         onClick =
             onClick,
-        modifier =
-            Modifier.pressScale(
-                interactionSource =
-                    interactionSource
-            ),
-        interactionSource =
-            interactionSource,
         shape =
             RoundedCornerShape(
                 20.dp
             )
     ) {
-
         Text(
             text =
                 text
@@ -1290,87 +1791,19 @@ private fun AnimatedTextButton(
     text: String,
     onClick: () -> Unit
 ) {
-
-    val interactionSource =
-        remember {
-            MutableInteractionSource()
-        }
-
+    /*
+     * TextButton uses Material's ripple indication by default.
+     */
     TextButton(
         onClick =
-            onClick,
-        modifier =
-            Modifier.pressScale(
-                interactionSource =
-                    interactionSource
-            ),
-        interactionSource =
-            interactionSource
+            onClick
     ) {
-
         Text(
             text =
                 text,
             fontSize =
                 14.sp
         )
-    }
-}
-
-@Composable
-private fun Modifier.pressScale(
-    interactionSource:
-        MutableInteractionSource,
-    pressedScale: Float =
-        0.965f
-): Modifier {
-
-    val isPressed by
-        interactionSource
-            .collectIsPressedAsState()
-
-    val scale by
-        animateFloatAsState(
-            targetValue =
-                if (
-                    isPressed
-                ) {
-                    pressedScale
-                } else {
-                    1f
-                },
-            animationSpec =
-                if (
-                    isPressed
-                ) {
-
-                    tween(
-                        durationMillis =
-                            55,
-                        easing =
-                            FastOutSlowInEasing
-                    )
-
-                } else {
-
-                    spring(
-                        dampingRatio =
-                            0.82f,
-                        stiffness =
-                            900f
-                    )
-                },
-            label =
-                "favoritePressScale"
-        )
-
-    return graphicsLayer {
-
-        scaleX =
-            scale
-
-        scaleY =
-            scale
     }
 }
 
@@ -1443,6 +1876,191 @@ private fun FavoritePickerWindowEffect() {
             }
         }
     }
+}
+
+private data class SwapAnimationRequest(
+    val id: Long,
+    val offsets: Map<String, Offset>
+)
+
+private fun selectedGridKey(
+    app: InstalledApp
+): String {
+    return SELECTED_GRID_KEY_PREFIX +
+        appKey(
+            app
+        )
+}
+
+private fun findSelectedDropTarget(
+    gridState:
+        androidx.compose.foundation.lazy.grid.LazyGridState,
+    draggedAppKey: String,
+    pointer: Offset
+): String? {
+    return gridState
+        .layoutInfo
+        .visibleItemsInfo
+        .asSequence()
+        .mapNotNull {
+                item ->
+
+            val gridKey =
+                item.key as? String
+                    ?: return@mapNotNull null
+
+            if (
+                !gridKey.startsWith(
+                    SELECTED_GRID_KEY_PREFIX
+                )
+            ) {
+                return@mapNotNull null
+            }
+
+            val candidateAppKey =
+                gridKey.removePrefix(
+                    SELECTED_GRID_KEY_PREFIX
+                )
+
+            if (
+                candidateAppKey ==
+                draggedAppKey
+            ) {
+                return@mapNotNull null
+            }
+
+            val left =
+                item.offset.x.toFloat()
+
+            val top =
+                item.offset.y.toFloat()
+
+            val right =
+                left +
+                    item.size.width
+
+            val bottom =
+                top +
+                    item.size.height
+
+            /*
+             * A small expansion lets the target feel forgiving while still
+             * requiring the finger to be genuinely near another tile.
+             */
+            val horizontalTolerance =
+                item.size.width *
+                    0.18f
+
+            val verticalTolerance =
+                item.size.height *
+                    0.18f
+
+            val isNearCandidate =
+                pointer.x >=
+                    left -
+                        horizontalTolerance &&
+                pointer.x <=
+                    right +
+                        horizontalTolerance &&
+                pointer.y >=
+                    top -
+                        verticalTolerance &&
+                pointer.y <=
+                    bottom +
+                        verticalTolerance
+
+            if (
+                !isNearCandidate
+            ) {
+                return@mapNotNull null
+            }
+
+            val centerX =
+                left +
+                    item.size.width /
+                        2f
+
+            val centerY =
+                top +
+                    item.size.height /
+                        2f
+
+            val dx =
+                pointer.x -
+                    centerX
+
+            val dy =
+                pointer.y -
+                    centerY
+
+            candidateAppKey to
+                (dx * dx +
+                    dy * dy)
+        }
+        .minByOrNull {
+            it.second
+        }
+        ?.first
+}
+
+private fun swapSelectedApps(
+    selectedApps:
+        MutableList<InstalledApp>,
+    sourceAppKey: String,
+    targetAppKey: String
+) {
+    val sourceIndex =
+        selectedApps
+            .indexOfFirst {
+                    app ->
+
+                appKey(
+                    app
+                ) ==
+                    sourceAppKey
+            }
+
+    val targetIndex =
+        selectedApps
+            .indexOfFirst {
+                    app ->
+
+                appKey(
+                    app
+                ) ==
+                    targetAppKey
+            }
+
+    if (
+        sourceIndex < 0 ||
+        targetIndex < 0 ||
+        sourceIndex ==
+            targetIndex
+    ) {
+        return
+    }
+
+    /*
+     * Favorites are intentionally positional rather than list-like.
+     * Dropping one favorite over another exchanges only those two
+     * positions instead of shifting every app between them.
+     */
+    val sourceApp =
+        selectedApps[
+            sourceIndex
+        ]
+
+    selectedApps[
+        sourceIndex
+    ] =
+        selectedApps[
+            targetIndex
+        ]
+
+    selectedApps[
+        targetIndex
+    ] =
+        sourceApp
 }
 
 private fun toggleSelection(
@@ -1553,3 +2171,7 @@ private fun appKey(
         app.componentName
             .flattenToString()
 }
+
+private const val SELECTED_GRID_KEY_PREFIX =
+    "selected:"
+

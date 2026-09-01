@@ -20,14 +20,29 @@ interface FavoriteDao {
     fun observeFavorites(): Flow<List<FavoriteEntity>>
 
     @Insert(
-        onConflict = OnConflictStrategy.REPLACE
+        onConflict =
+            OnConflictStrategy.REPLACE
     )
     suspend fun insertAll(
         favorites: List<FavoriteEntity>
     )
 
-    @Query("DELETE FROM favorites")
+    @Query(
+        "DELETE FROM favorites"
+    )
     suspend fun deleteAll()
+
+    @Query(
+        """
+        DELETE FROM favorites
+        WHERE packageName = :packageName
+          AND userSerial = :userSerial
+        """
+    )
+    suspend fun deleteByPackage(
+        packageName: String,
+        userSerial: Long
+    )
 
     @Transaction
     suspend fun replaceAll(
@@ -35,8 +50,13 @@ interface FavoriteDao {
     ) {
         deleteAll()
 
-        if (favorites.isNotEmpty()) {
-            insertAll(favorites)
+        if (
+            favorites.isNotEmpty()
+        ) {
+            insertAll(
+                favorites
+            )
         }
     }
 }
+

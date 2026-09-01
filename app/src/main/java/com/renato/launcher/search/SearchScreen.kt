@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,8 +62,10 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.notifications.NotificationBadgeStore
 import com.renato.launcher.ui.components.AppContextMenu
 import com.renato.launcher.ui.components.LauncherSearchBar
+import com.renato.launcher.ui.components.LauncherAppIconWithBadge
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 import com.renato.launcher.ui.interactions.launcherAppCombinedClickable
@@ -83,6 +86,11 @@ fun SearchScreen(
     onBack: () -> Unit
 ) {
     SearchWindowEffect()
+
+    val notificationCounts by
+        NotificationBadgeStore
+            .counts
+            .collectAsState()
 
     var query by remember {
         mutableStateOf("")
@@ -510,6 +518,14 @@ fun SearchScreen(
                                     isFavorite =
                                         appKey(app) in
                                             favoriteAppKeys,
+                                    notificationCount =
+                                        NotificationBadgeStore
+                                            .countFor(
+                                                counts =
+                                                    notificationCounts,
+                                                app =
+                                                    app
+                                            ),
                                     onClick = {
                                         onAppClick(
                                             app,
@@ -582,6 +598,14 @@ fun SearchScreen(
                                     isFavorite =
                                         appKey(app) in
                                             favoriteAppKeys,
+                                    notificationCount =
+                                        NotificationBadgeStore
+                                            .countFor(
+                                                counts =
+                                                    notificationCounts,
+                                                app =
+                                                    app
+                                            ),
                                     onClick = {
                                         onAppClick(
                                             app,
@@ -678,6 +702,14 @@ fun SearchScreen(
                             isFavorite =
                                 appKey(app) in
                                     favoriteAppKeys,
+                            notificationCount =
+                                NotificationBadgeStore
+                                    .countFor(
+                                        counts =
+                                            notificationCounts,
+                                        app =
+                                            app
+                                    ),
                             onClick = {
                                 onAppClick(
                                     app,
@@ -823,6 +855,7 @@ private fun SearchAppItem(
     app: InstalledApp,
     testTag: String? = null,
     isFavorite: Boolean,
+    notificationCount: Int,
     onClick: () -> Unit,
     onAppInfo: () -> Unit,
     onRemoveFavorite: () -> Unit,
@@ -903,15 +936,15 @@ private fun SearchAppItem(
             horizontalAlignment =
                 Alignment.CenterHorizontally
         ) {
-            Image(
+            LauncherAppIconWithBadge(
                 bitmap =
                     iconBitmap,
                 contentDescription =
                     app.label,
-                modifier =
-                    Modifier.size(
-                        44.dp
-                    )
+                iconSize =
+                    44.dp,
+                notificationCount =
+                    notificationCount
             )
 
             Spacer(

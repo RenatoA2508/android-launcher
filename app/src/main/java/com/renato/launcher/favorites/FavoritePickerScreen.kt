@@ -8,6 +8,7 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -46,11 +48,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +66,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.search.AppSearchEngine
 import com.renato.launcher.ui.components.LauncherSearchBar
@@ -135,6 +144,45 @@ fun FavoritePickerScreen(
 
     val searchGridState =
         rememberLazyGridState()
+
+    /*
+     * Drag state belongs only to the selected-app section.
+     *
+     * The editor remains transactional:
+     * dragging changes the local order immediately, but Room is
+     * updated only when the user presses Listo. Cancelar therefore
+     * still discards the entire edit session.
+     */
+    var draggedSelectedAppKey by
+        remember {
+            mutableStateOf<String?>(
+                null
+            )
+        }
+
+    var dropTargetSelectedAppKey by
+        remember {
+            mutableStateOf<String?>(
+                null
+            )
+        }
+
+    var draggedTranslation by
+        remember {
+            mutableStateOf(
+                Offset.Zero
+            )
+        }
+
+    var dragPointerInGrid by
+        remember {
+            mutableStateOf(
+                Offset.Zero
+            )
+        }
+
+    val hapticFeedback =
+        LocalHapticFeedback.current
 
     val focusRequester =
         remember {
@@ -215,6 +263,20 @@ fun FavoritePickerScreen(
             }
         }
 
+    fun clearSelectedDrag() {
+        draggedSelectedAppKey =
+            null
+
+        dropTargetSelectedAppKey =
+            null
+
+        draggedTranslation =
+            Offset.Zero
+
+        dragPointerInGrid =
+            Offset.Zero
+    }
+
     fun exitSearch() {
 
         if (
@@ -267,6 +329,8 @@ fun FavoritePickerScreen(
         if (
             searchMode
         ) {
+
+            clearSelectedDrag()
 
             withFrameNanos { }
 
@@ -412,7 +476,10 @@ fun FavoritePickerScreen(
                 verticalArrangement =
                     Arrangement.spacedBy(
                         8.dp
-                    )
+                    ),
+                userScrollEnabled =
+                    draggedSelectedAppKey ==
+                        null
             ) {
 
                 /*
@@ -481,6 +548,19 @@ fun FavoritePickerScreen(
                                     app
                                 )
 
+                            val selectedGridKey =
+                                selectedGridKey(
+                                    app
+                                )
+
+                            val isDragging =
+                                draggedSelectedAppKey ==
+                                    key
+
+                            val isDropTarget =
+                                dropTargetSelectedAppKey ==
+                                    key
+
                             SelectedAppItem(
                                 app =
                                     app,
@@ -488,8 +568,115 @@ fun FavoritePickerScreen(
                                     selectionPositions[
                                         key
                                     ] ?: 0,
-                                onRemove = {
+                                isDragging =
+                                    isDragging,
+                                isDropTarget =
+                                    isDropTarget,
+                                dragTranslation =
+                                    if (
+                                        isDragging
+                                    ) {
+                                        draggedTranslation
+                                    } else {
+                                        Offset.Zero
+                                    },
+                                onDragStart = {
+                                        touchOffset ->
 
+                                    val itemInfo =
+                                        normalGridState
+                                            .layoutInfo
+                                            .visibleItemsInfo
+                                            .firstOrNull {
+                                                    item ->
+
+                                                item.key ==
+                                                    selectedGridKey
+                                            }
+
+                                    if (
+                                        itemInfo != null
+                                    ) {
+                                        draggedSelectedAppKey =
+                                            key
+
+                                        dropTargetSelectedAppKey =
+                                            null
+
+                                        draggedTranslation =
+                                            Offset.Zero
+
+                                        dragPointerInGrid =
+                                            Offset(
+                                                x =
+                                                    itemInfo.offset.x
+                                                        .toFloat() +
+                                                        touchOffset.x,
+                                                y =
+                                                    itemInfo.offset.y
+                                                        .toFloat() +
+                                                        touchOffset.y
+                                            )
+
+                                        hapticFeedback
+                                            .performHapticFeedback(
+                                                HapticFeedbackType.LongPress
+                                            )
+                                    }
+                                },
+                                onDrag = {
+                                        dragAmount ->
+
+                                    if (
+                                        draggedSelectedAppKey ==
+                                            key
+                                    ) {
+                                        draggedTranslation +=
+                                            dragAmount
+
+                                        dragPointerInGrid +=
+                                            dragAmount
+
+                                        dropTargetSelectedAppKey =
+                                            findSelectedDropTarget(
+                                                gridState =
+                                                    normalGridState,
+                                                draggedAppKey =
+                                                    key,
+                                                pointer =
+                                                    dragPointerInGrid
+                                            )
+                                    }
+                                },
+                                onDragEnd = {
+                                    val sourceKey =
+                                        draggedSelectedAppKey
+
+                                    val targetKey =
+                                        dropTargetSelectedAppKey
+
+                                    if (
+                                        sourceKey != null &&
+                                        targetKey != null &&
+                                        sourceKey !=
+                                            targetKey
+                                    ) {
+                                        moveSelectedApp(
+                                            selectedApps =
+                                                selectedApps,
+                                            sourceAppKey =
+                                                sourceKey,
+                                            targetAppKey =
+                                                targetKey
+                                        )
+                                    }
+
+                                    clearSelectedDrag()
+                                },
+                                onDragCancel = {
+                                    clearSelectedDrag()
+                                },
+                                onRemove = {
                                     removeSelectedApp(
                                         selectedApps =
                                             selectedApps,
@@ -893,6 +1080,7 @@ private fun SelectedAppsHeading() {
         Text(
             text =
                 "Toca una aplicación para quitarla. " +
+                    "Mantén pulsado y arrastra para cambiar su posición. " +
                     "El número indica su posición en Inicio.",
             fontSize =
                 13.sp,
@@ -952,6 +1140,13 @@ private fun EmptySelectionState() {
 private fun SelectedAppItem(
     app: InstalledApp,
     position: Int,
+    isDragging: Boolean,
+    isDropTarget: Boolean,
+    dragTranslation: Offset,
+    onDragStart: (Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
     onRemove: () -> Unit
 ) {
     val iconBitmap =
@@ -959,17 +1154,71 @@ private fun SelectedAppItem(
             app
         )
 
-    val shape =
+    val tileShape =
         RoundedCornerShape(
             20.dp
         )
+
+    val density =
+        LocalDensity.current
+
+    val dragElevationPx =
+        remember(density) {
+            with(density) {
+                12.dp.toPx()
+            }
+        }
+
+    val dropTargetBorder =
+        if (
+            isDropTarget
+        ) {
+            MaterialTheme
+                .colorScheme
+                .primary
+                .copy(
+                    alpha =
+                        0.88f
+                )
+        } else {
+            Color.Transparent
+        }
 
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .zIndex(
+                    if (
+                        isDragging
+                    ) {
+                        2f
+                    } else {
+                        0f
+                    }
+                )
+                .graphicsLayer {
+                    if (
+                        isDragging
+                    ) {
+                        translationX =
+                            dragTranslation.x
+
+                        translationY =
+                            dragTranslation.y
+
+                        shadowElevation =
+                            dragElevationPx
+
+                        this.shape =
+                            tileShape
+
+                        clip =
+                            false
+                    }
+                }
                 .clip(
-                    shape
+                    tileShape
                 )
                 .background(
                     MaterialTheme
@@ -977,10 +1226,59 @@ private fun SelectedAppItem(
                         .primaryContainer
                         .copy(
                             alpha =
-                                0.72f
+                                if (
+                                    isDragging
+                                ) {
+                                    0.94f
+                                } else {
+                                    0.72f
+                                }
                         )
                 )
+                .then(
+                    if (
+                        isDropTarget
+                    ) {
+                        Modifier.border(
+                            width =
+                                2.dp,
+                            color =
+                                dropTargetBorder,
+                            shape =
+                                tileShape
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+                .pointerInput(
+                    app.componentName,
+                    app.user
+                ) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart =
+                            onDragStart,
+                        onDragEnd =
+                            onDragEnd,
+                        onDragCancel =
+                            onDragCancel,
+                        onDrag = {
+                                change,
+                                dragAmount ->
+
+                            change.consume()
+
+                            onDrag(
+                                dragAmount
+                            )
+                        }
+                    )
+                }
                 .launcherAppClickable(
+                    enabled =
+                        !isDragging,
+                    shape =
+                        tileShape,
                     onClickLabel =
                         "Quitar ${app.label} de Favoritas",
                     onClick =
@@ -1328,6 +1626,174 @@ private fun FavoritePickerWindowEffect() {
     }
 }
 
+private fun selectedGridKey(
+    app: InstalledApp
+): String {
+    return SELECTED_GRID_KEY_PREFIX +
+        appKey(
+            app
+        )
+}
+
+private fun findSelectedDropTarget(
+    gridState:
+        androidx.compose.foundation.lazy.grid.LazyGridState,
+    draggedAppKey: String,
+    pointer: Offset
+): String? {
+    return gridState
+        .layoutInfo
+        .visibleItemsInfo
+        .asSequence()
+        .mapNotNull {
+                item ->
+
+            val gridKey =
+                item.key as? String
+                    ?: return@mapNotNull null
+
+            if (
+                !gridKey.startsWith(
+                    SELECTED_GRID_KEY_PREFIX
+                )
+            ) {
+                return@mapNotNull null
+            }
+
+            val candidateAppKey =
+                gridKey.removePrefix(
+                    SELECTED_GRID_KEY_PREFIX
+                )
+
+            if (
+                candidateAppKey ==
+                draggedAppKey
+            ) {
+                return@mapNotNull null
+            }
+
+            val left =
+                item.offset.x.toFloat()
+
+            val top =
+                item.offset.y.toFloat()
+
+            val right =
+                left +
+                    item.size.width
+
+            val bottom =
+                top +
+                    item.size.height
+
+            /*
+             * A small expansion lets the target feel forgiving while still
+             * requiring the finger to be genuinely near another tile.
+             */
+            val horizontalTolerance =
+                item.size.width *
+                    0.18f
+
+            val verticalTolerance =
+                item.size.height *
+                    0.18f
+
+            val isNearCandidate =
+                pointer.x >=
+                    left -
+                        horizontalTolerance &&
+                pointer.x <=
+                    right +
+                        horizontalTolerance &&
+                pointer.y >=
+                    top -
+                        verticalTolerance &&
+                pointer.y <=
+                    bottom +
+                        verticalTolerance
+
+            if (
+                !isNearCandidate
+            ) {
+                return@mapNotNull null
+            }
+
+            val centerX =
+                left +
+                    item.size.width /
+                        2f
+
+            val centerY =
+                top +
+                    item.size.height /
+                        2f
+
+            val dx =
+                pointer.x -
+                    centerX
+
+            val dy =
+                pointer.y -
+                    centerY
+
+            candidateAppKey to
+                (dx * dx +
+                    dy * dy)
+        }
+        .minByOrNull {
+            it.second
+        }
+        ?.first
+}
+
+private fun moveSelectedApp(
+    selectedApps:
+        MutableList<InstalledApp>,
+    sourceAppKey: String,
+    targetAppKey: String
+) {
+    val sourceIndex =
+        selectedApps
+            .indexOfFirst {
+                    app ->
+
+                appKey(
+                    app
+                ) ==
+                    sourceAppKey
+            }
+
+    val targetIndex =
+        selectedApps
+            .indexOfFirst {
+                    app ->
+
+                appKey(
+                    app
+                ) ==
+                    targetAppKey
+            }
+
+    if (
+        sourceIndex < 0 ||
+        targetIndex < 0 ||
+        sourceIndex ==
+            targetIndex
+    ) {
+        return
+    }
+
+    val movedApp =
+        selectedApps.removeAt(
+            sourceIndex
+        )
+
+    selectedApps.add(
+        targetIndex,
+        movedApp
+    )
+}
+
 private fun toggleSelection(
     selectedApps:
         MutableList<InstalledApp>,
@@ -1437,3 +1903,5 @@ private fun appKey(
             .flattenToString()
 }
 
+private const val SELECTED_GRID_KEY_PREFIX =
+    "selected:"

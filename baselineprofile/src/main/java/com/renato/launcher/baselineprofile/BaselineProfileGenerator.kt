@@ -254,6 +254,189 @@ class BaselineProfileGenerator {
             device.waitForIdle()
         }
 
+    /*
+     * ============================================================
+     * ALL APPS
+     * ============================================================
+     *
+     * Baseline Profile only:
+     *
+     * Home
+     *  ↓
+     * swipe up
+     *  ↓
+     * Search
+     *  ↓
+     * Todas las aplicaciones
+     *  ↓
+     * All Apps
+     *  ↓
+     * initial grid composition
+     *  ↓
+     * several catalog rows / lazy icon loading
+     */
+    @Test
+    fun allApps() =
+        baselineProfileRule.collect(
+            packageName =
+                TARGET_PACKAGE,
+            includeInStartupProfile =
+                false,
+            maxIterations =
+                8,
+            stableIterations =
+                3
+        ) {
+
+            /*
+             * Each iteration starts from the real launcher Home.
+             *
+             * MainActivity is singleTask, so pressHome() also resets
+             * any internal launcher screen left from the prior iteration.
+             */
+            device.pressHome()
+
+            val homeVisible =
+                device.wait(
+                    Until.hasObject(
+                        By.res(
+                            HOME_ROOT_TAG
+                        )
+                    ),
+                    UI_TIMEOUT_MS
+                )
+
+            check(
+                homeVisible
+            ) {
+                "Launcher Home did not appear."
+            }
+
+            device.waitForIdle()
+
+            /*
+             * Open Search using the same verified physical gesture as
+             * the existing Search profile.
+             */
+            val centerX =
+                device.displayWidth / 2
+
+            val searchStartY =
+                (
+                    device.displayHeight *
+                        0.80f
+                    ).toInt()
+
+            val searchEndY =
+                (
+                    device.displayHeight *
+                        0.38f
+                    ).toInt()
+
+            device.swipe(
+                centerX,
+                searchStartY,
+                centerX,
+                searchEndY,
+                60
+            )
+
+            val searchVisible =
+                device.wait(
+                    Until.hasObject(
+                        By.res(
+                            SEARCH_ROOT_TAG
+                        )
+                    ),
+                    UI_TIMEOUT_MS
+                )
+
+            check(
+                searchVisible
+            ) {
+                "Search screen did not open after swipe."
+            }
+
+            /*
+             * The All Apps launcher is explicitly tagged so this journey
+             * never depends on visible text, locale, or pixel coordinates.
+             */
+            val allAppsButtonVisible =
+                device.wait(
+                    Until.hasObject(
+                        By.res(
+                            ALL_APPS_BUTTON_TAG
+                        )
+                    ),
+                    UI_TIMEOUT_MS
+                )
+
+            check(
+                allAppsButtonVisible
+            ) {
+                "All Apps button did not appear in empty Search."
+            }
+
+            device
+                .findObject(
+                    By.res(
+                        ALL_APPS_BUTTON_TAG
+                    )
+                )
+                .click()
+
+            val allAppsVisible =
+                device.wait(
+                    Until.hasObject(
+                        By.res(
+                            ALL_APPS_ROOT_TAG
+                        )
+                    ),
+                    UI_TIMEOUT_MS
+                )
+
+            check(
+                allAppsVisible
+            ) {
+                "All Apps screen did not open."
+            }
+
+            device.waitForIdle()
+
+            /*
+             * Exercise LazyVerticalGrid composition beyond the first screen.
+             *
+             * The swipe stays in the center of the display, away from the
+             * alphabet rail on the right, so it profiles normal catalog
+             * scrolling instead of invoking fast-index navigation.
+             */
+            val catalogStartY =
+                (
+                    device.displayHeight *
+                        0.78f
+                    ).toInt()
+
+            val catalogEndY =
+                (
+                    device.displayHeight *
+                        0.30f
+                    ).toInt()
+
+            repeat(
+                ALL_APPS_SCROLL_COUNT
+            ) {
+                device.swipe(
+                    centerX,
+                    catalogStartY,
+                    centerX,
+                    catalogEndY,
+                    55
+                )
+
+                device.waitForIdle()
+            }
+        }
+
     private companion object {
 
         const val TARGET_PACKAGE =
@@ -270,6 +453,15 @@ class BaselineProfileGenerator {
 
         const val FIRST_SEARCH_RESULT_TAG =
             "launcher_search_result_0"
+
+        const val ALL_APPS_BUTTON_TAG =
+            "launcher_all_apps_button"
+
+        const val ALL_APPS_ROOT_TAG =
+            "launcher_all_apps_root"
+
+        const val ALL_APPS_SCROLL_COUNT =
+            3
 
         /*
          * Generic query suitable for the physical

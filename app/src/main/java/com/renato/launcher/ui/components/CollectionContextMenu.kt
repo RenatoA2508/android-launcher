@@ -1,17 +1,12 @@
 package com.renato.launcher.ui.components
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,41 +26,16 @@ fun CollectionContextMenu(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val menuContainerColor =
-        if (
-            isSystemInDarkTheme()
-        ) {
-            Color(
-                0xFF252527
-            )
-        } else {
-            Color(
-                0xFFF5F5F7
-            )
-        }
 
-    DropdownMenu(
+    LauncherDropdownMenu(
         expanded =
             expanded,
         onDismissRequest =
             onDismiss,
-        modifier =
-            Modifier.widthIn(
-                min =
-                    240.dp,
-                max =
-                    300.dp
-            ),
-        shape =
-            RoundedCornerShape(
-                26.dp
-            ),
-        containerColor =
-            menuContainerColor,
-        tonalElevation =
-            0.dp,
-        shadowElevation =
-            12.dp
+        minWidth =
+            240.dp,
+        maxWidth =
+            300.dp
     ) {
         Text(
             text =

@@ -5,18 +5,25 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.renato.launcher.ui.interactions.launcherClickable
@@ -216,27 +223,89 @@ fun LauncherMenuItem(
         ),
     content: @Composable RowScope.() -> Unit
 ) {
-    Row(
+    CompositionLocalProvider(
+        LocalContentColor provides
+            MaterialTheme
+                .colorScheme
+                .onSurface
+    ) {
+        Row(
+            modifier =
+                modifier
+                    .fillMaxWidth()
+                    .heightIn(
+                        min =
+                            52.dp
+                    )
+                    .launcherTransitionClickable(
+                        enabled =
+                            enabled,
+                        shape =
+                            shape,
+                        onClick =
+                            onClick
+                    )
+                    .padding(
+                        contentPadding
+                    ),
+            verticalAlignment =
+                Alignment.CenterVertically,
+            content =
+                content
+        )
+    }
+}
+
+/**
+ * Shared context-menu surface.
+ *
+ * This is the single source of truth for the launcher menu container so Home,
+ * Search, All Apps and Collections never drift to slightly different grays.
+ */
+@Composable
+fun LauncherDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    minWidth: Dp = 240.dp,
+    maxWidth: Dp = 300.dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val containerColor =
+        if (
+            isSystemInDarkTheme()
+        ) {
+            Color(
+                0xFF252527
+            )
+        } else {
+            Color(
+                0xFFF5F5F7
+            )
+        }
+
+    DropdownMenu(
+        expanded =
+            expanded,
+        onDismissRequest =
+            onDismissRequest,
         modifier =
-            modifier
-                .fillMaxWidth()
-                .heightIn(
-                    min =
-                        52.dp
-                )
-                .launcherTransitionClickable(
-                    enabled =
-                        enabled,
-                    shape =
-                        shape,
-                    onClick =
-                        onClick
-                )
-                .padding(
-                    contentPadding
-                ),
-        verticalAlignment =
-            Alignment.CenterVertically,
+            modifier.widthIn(
+                min =
+                    minWidth,
+                max =
+                    maxWidth
+            ),
+        shape =
+            RoundedCornerShape(
+                26.dp
+            ),
+        containerColor =
+            containerColor,
+        tonalElevation =
+            0.dp,
+        shadowElevation =
+            12.dp,
         content =
             content
     )

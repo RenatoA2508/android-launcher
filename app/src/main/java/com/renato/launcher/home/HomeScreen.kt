@@ -1022,6 +1022,9 @@ private fun FavoriteAppItem(
     val hapticFeedback =
         LocalHapticFeedback.current
 
+    val gestureCoroutineScope =
+        rememberCoroutineScope()
+
     val density =
         LocalDensity.current
 
@@ -1304,6 +1307,9 @@ private fun FavoriteAppItem(
                         var actualDragStarted =
                             false
 
+                        var longPressGestureActive =
+                            false
+
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
                                     touchOffset ->
@@ -1313,6 +1319,9 @@ private fun FavoriteAppItem(
 
                                 actualDragStarted =
                                     false
+
+                                longPressGestureActive =
+                                    true
 
                                 menuExpanded =
                                     false
@@ -1325,23 +1334,44 @@ private fun FavoriteAppItem(
                                 onDragStart(
                                     touchOffset
                                 )
+
+                                gestureCoroutineScope.launch {
+                                    delay(
+                                        LONG_PRESS_MENU_REVEAL_DELAY_MILLIS
+                                    )
+
+                                    if (
+                                        longPressGestureActive &&
+                                        !actualDragStarted &&
+                                        !menuExpanded
+                                    ) {
+                                        menuExpanded =
+                                            true
+                                    }
+                                }
                             },
                             onDragEnd = {
+                                longPressGestureActive =
+                                    false
+
                                 if (
                                     actualDragStarted
                                 ) {
                                     onDragEnd()
                                 } else {
                                     /*
-                                     * A stationary long press is the context
-                                     * menu gesture. The menu opens on release
-                                     * so it never steals the active pointer
-                                     * from a possible drag.
+                                     * If the finger was released before the
+                                     * short menu-reveal grace window elapsed,
+                                     * open the context menu immediately here.
                                      */
                                     onDragCancel()
 
-                                    menuExpanded =
-                                        true
+                                    if (
+                                        !menuExpanded
+                                    ) {
+                                        menuExpanded =
+                                            true
+                                    }
                                 }
 
                                 cumulativeDrag =
@@ -1351,6 +1381,9 @@ private fun FavoriteAppItem(
                                     false
                             },
                             onDragCancel = {
+                                longPressGestureActive =
+                                    false
+
                                 onDragCancel()
 
                                 cumulativeDrag =
@@ -1374,6 +1407,9 @@ private fun FavoriteAppItem(
                                 ) {
                                     actualDragStarted =
                                         true
+
+                                    menuExpanded =
+                                        false
 
                                     change.consume()
 
@@ -2070,6 +2106,9 @@ private fun HomeCollectionItem(
     val hapticFeedback =
         LocalHapticFeedback.current
 
+    val gestureCoroutineScope =
+        rememberCoroutineScope()
+
     val density =
         LocalDensity.current
 
@@ -2355,6 +2394,9 @@ private fun HomeCollectionItem(
                         var actualDragStarted =
                             false
 
+                        var longPressGestureActive =
+                            false
+
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
                                     touchOffset ->
@@ -2364,6 +2406,9 @@ private fun HomeCollectionItem(
 
                                 actualDragStarted =
                                     false
+
+                                longPressGestureActive =
+                                    true
 
                                 menuExpanded =
                                     false
@@ -2376,8 +2421,26 @@ private fun HomeCollectionItem(
                                 onDragStart(
                                     touchOffset
                                 )
+
+                                gestureCoroutineScope.launch {
+                                    delay(
+                                        LONG_PRESS_MENU_REVEAL_DELAY_MILLIS
+                                    )
+
+                                    if (
+                                        longPressGestureActive &&
+                                        !actualDragStarted &&
+                                        !menuExpanded
+                                    ) {
+                                        menuExpanded =
+                                            true
+                                    }
+                                }
                             },
                             onDragEnd = {
+                                longPressGestureActive =
+                                    false
+
                                 if (
                                     actualDragStarted
                                 ) {
@@ -2385,8 +2448,12 @@ private fun HomeCollectionItem(
                                 } else {
                                     onDragCancel()
 
-                                    menuExpanded =
-                                        true
+                                    if (
+                                        !menuExpanded
+                                    ) {
+                                        menuExpanded =
+                                            true
+                                    }
                                 }
 
                                 cumulativeDrag =
@@ -2396,6 +2463,9 @@ private fun HomeCollectionItem(
                                     false
                             },
                             onDragCancel = {
+                                longPressGestureActive =
+                                    false
+
                                 onDragCancel()
 
                                 cumulativeDrag =
@@ -2419,6 +2489,9 @@ private fun HomeCollectionItem(
                                 ) {
                                     actualDragStarted =
                                         true
+
+                                    menuExpanded =
+                                        false
 
                                     change.consume()
 
@@ -3461,6 +3534,9 @@ private fun CollectionSheetAppItem(
     val hapticFeedback =
         LocalHapticFeedback.current
 
+    val gestureCoroutineScope =
+        rememberCoroutineScope()
+
     val density =
         LocalDensity.current
 
@@ -3698,6 +3774,9 @@ private fun CollectionSheetAppItem(
                         var actualDragStarted =
                             false
 
+                        var longPressGestureActive =
+                            false
+
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
                                     touchOffset ->
@@ -3707,6 +3786,9 @@ private fun CollectionSheetAppItem(
 
                                 actualDragStarted =
                                     false
+
+                                longPressGestureActive =
+                                    true
 
                                 menuExpanded =
                                     false
@@ -3719,8 +3801,26 @@ private fun CollectionSheetAppItem(
                                 onDragStart(
                                     touchOffset
                                 )
+
+                                gestureCoroutineScope.launch {
+                                    delay(
+                                        LONG_PRESS_MENU_REVEAL_DELAY_MILLIS
+                                    )
+
+                                    if (
+                                        longPressGestureActive &&
+                                        !actualDragStarted &&
+                                        !menuExpanded
+                                    ) {
+                                        menuExpanded =
+                                            true
+                                    }
+                                }
                             },
                             onDragEnd = {
+                                longPressGestureActive =
+                                    false
+
                                 if (
                                     actualDragStarted
                                 ) {
@@ -3728,8 +3828,12 @@ private fun CollectionSheetAppItem(
                                 } else {
                                     onDragCancel()
 
-                                    menuExpanded =
-                                        true
+                                    if (
+                                        !menuExpanded
+                                    ) {
+                                        menuExpanded =
+                                            true
+                                    }
                                 }
 
                                 cumulativeDrag =
@@ -3739,6 +3843,9 @@ private fun CollectionSheetAppItem(
                                     false
                             },
                             onDragCancel = {
+                                longPressGestureActive =
+                                    false
+
                                 onDragCancel()
 
                                 cumulativeDrag =
@@ -3762,6 +3869,9 @@ private fun CollectionSheetAppItem(
                                 ) {
                                     actualDragStarted =
                                         true
+
+                                    menuExpanded =
+                                        false
 
                                     change.consume()
 
@@ -4390,3 +4500,12 @@ private fun wallpaperTextStyle(
 
 private const val HOME_ROOT_TAG =
     "launcher_home_root"
+
+/*
+ * After Compose recognizes a long press, give drag intent a short grace window.
+ * If the finger stays still, show the context menu without requiring release.
+ * The platform long-press detector itself is left intact so drag/drop remains
+ * reliable and accidental drags do not become easier to trigger.
+ */
+private const val LONG_PRESS_MENU_REVEAL_DELAY_MILLIS =
+    140L

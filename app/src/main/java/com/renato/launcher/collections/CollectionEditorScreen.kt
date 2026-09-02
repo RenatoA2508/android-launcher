@@ -1019,13 +1019,7 @@ private fun CollectionEditorHeader(
         modifier =
             Modifier.fillMaxWidth(),
         color =
-            MaterialTheme
-                .colorScheme
-                .surface
-                .copy(
-                    alpha =
-                        0.84f
-                )
+            Color.Transparent
     ) {
         Row(
             modifier =
@@ -1149,13 +1143,7 @@ private fun CollectionNameField(
         modifier =
             Modifier.fillMaxWidth(),
         color =
-            MaterialTheme
-                .colorScheme
-                .surface
-                .copy(
-                    alpha =
-                        0.84f
-                )
+            Color.Transparent
     ) {
         OutlinedTextField(
             value =

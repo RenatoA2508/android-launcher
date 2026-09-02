@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +37,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.data.database.collection.CollectionAppEntity
 import com.renato.launcher.data.database.collection.CollectionEntity
+import com.renato.launcher.ui.components.LauncherDropdownMenu
 import com.renato.launcher.ui.components.LauncherMenuItem
 import com.renato.launcher.ui.components.LauncherPrimaryActionButton
 import com.renato.launcher.ui.components.LauncherTextActionButton
@@ -253,13 +254,7 @@ private fun CollectionManagerHeader(
         modifier =
             Modifier.fillMaxWidth(),
         color =
-            MaterialTheme
-                .colorScheme
-                .surface
-                .copy(
-                    alpha =
-                        0.84f
-                )
+            Color.Transparent
     ) {
         Row(
             modifier =
@@ -481,7 +476,7 @@ private fun CollectionCard(
             )
         }
 
-        DropdownMenu(
+        LauncherDropdownMenu(
             expanded =
                 menuExpanded,
             onDismissRequest = {

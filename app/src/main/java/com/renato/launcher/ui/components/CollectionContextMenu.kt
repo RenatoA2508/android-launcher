@@ -1,13 +1,8 @@
 package com.renato.launcher.ui.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -15,38 +10,27 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.renato.launcher.core.model.InstalledApp
-import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 
 /**
- * Shared launcher context menu used by Home and Search.
+ * Context menu for a launcher collection.
  *
- * Search can hide "Quitar de Inicio" for apps that are not currently
- * favorites, while preserving the same visual language everywhere.
+ * It deliberately mirrors AppContextMenu so collection interactions feel like
+ * the same launcher feature rather than a separate UI system.
  */
 @Composable
-fun AppContextMenu(
+fun CollectionContextMenu(
     expanded: Boolean,
-    app: InstalledApp,
-    showRemoveFromHome: Boolean,
-    removeLabel: String = "Quitar de Inicio",
+    collectionName: String,
     onDismiss: () -> Unit,
-    onAppInfo: () -> Unit,
-    onRemoveFavorite: () -> Unit,
-    onUninstallApp: () -> Unit
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
-    val iconBitmap =
-        rememberLauncherAppIcon(
-            app
-        )
-
     val menuContainerColor =
         if (
             isSystemInDarkTheme()
@@ -68,7 +52,7 @@ fun AppContextMenu(
         modifier =
             Modifier.widthIn(
                 min =
-                    260.dp,
+                    240.dp,
                 max =
                     300.dp
             ),
@@ -83,7 +67,9 @@ fun AppContextMenu(
         shadowElevation =
             12.dp
     ) {
-        Row(
+        Text(
+            text =
+                collectionName,
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -91,90 +77,45 @@ fun AppContextMenu(
                         horizontal =
                             18.dp,
                         vertical =
-                            14.dp
+                            16.dp
                     ),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-            Image(
-                bitmap =
-                    iconBitmap,
-                contentDescription =
-                    null,
-                modifier =
-                    Modifier.size(
-                        40.dp
-                    )
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.width(
-                        12.dp
-                    )
-            )
-
-            Text(
-                text =
-                    app.label,
-                modifier =
-                    Modifier.weight(
-                        1f
-                    ),
-                maxLines =
-                    1,
-                overflow =
-                    TextOverflow.Ellipsis,
-                fontSize =
-                    16.sp,
-                fontWeight =
-                    FontWeight.SemiBold,
-                color =
-                    MaterialTheme
-                        .colorScheme
-                        .onSurface
-            )
-        }
+            maxLines =
+                1,
+            overflow =
+                TextOverflow.Ellipsis,
+            fontSize =
+                16.sp,
+            fontWeight =
+                FontWeight.SemiBold,
+            color =
+                MaterialTheme
+                    .colorScheme
+                    .onSurface
+        )
 
         MenuDivider()
 
         LauncherMenuItem(
             onClick =
-                onAppInfo
+                onEdit
         ) {
             Text(
                 text =
-                    "Información de la app",
+                    "Editar colección",
                 fontSize =
                     15.sp
             )
         }
 
-        if (
-            showRemoveFromHome
-        ) {
-            LauncherMenuItem(
-                onClick =
-                    onRemoveFavorite
-            ) {
-                Text(
-                    text =
-                        removeLabel,
-                    fontSize =
-                        15.sp
-                )
-            }
-        }
-
         MenuDivider()
 
         LauncherMenuItem(
             onClick =
-                onUninstallApp
+                onDelete
         ) {
             Text(
                 text =
-                    "Desinstalar",
+                    "Eliminar colección",
                 fontSize =
                     15.sp,
                 color =

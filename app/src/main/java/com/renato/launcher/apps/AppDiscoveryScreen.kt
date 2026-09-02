@@ -1,7 +1,6 @@
 package com.renato.launcher.apps
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
+import com.renato.launcher.ui.interactions.launcherAppClickable
 
 @Composable
 fun AppDiscoveryScreen(
@@ -45,11 +45,20 @@ fun AppDiscoveryScreen(
     	) { app ->
 
             Column(
-                modifier = Modifier
-                    .clickable {
-                        onAppClick(app)
-                    }
-                    .padding(4.dp),
+                modifier =
+                    Modifier
+                        .launcherAppClickable(
+                            onClickLabel =
+                                "Abrir ${app.label}",
+                            onClick = {
+                                onAppClick(
+                                    app
+                                )
+                            }
+                        )
+                        .padding(
+                            4.dp
+                        ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 val iconBitmap =

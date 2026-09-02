@@ -14,21 +14,28 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.renato.launcher.apps.AppRepository
+import com.renato.launcher.collections.CollectionEditorScreen
+import com.renato.launcher.collections.CollectionManagerScreen
+import com.renato.launcher.collections.CollectionRepository
+import com.renato.launcher.collections.MAX_COLLECTIONS
 import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.data.database.LauncherDatabase
+import com.renato.launcher.data.database.collection.CollectionAppEntity
+import com.renato.launcher.data.database.collection.CollectionEntity
 import com.renato.launcher.data.database.favorite.FavoriteEntity
 import com.renato.launcher.data.database.recent.RecentAppEntity
 import com.renato.launcher.data.database.recent.RecentSearchEntity
@@ -37,6 +44,7 @@ import com.renato.launcher.favorites.FavoriteRepository
 import com.renato.launcher.home.HomeScreen
 import com.renato.launcher.recents.RecentRepository
 import com.renato.launcher.search.SearchScreen
+import com.renato.launcher.ui.components.LauncherPrimaryActionButton
 import com.renato.launcher.ui.theme.LauncherTheme
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -47,11 +55,41 @@ import kotlinx.coroutines.yield
 private enum class LauncherScreen {
     HOME,
     FAVORITES,
+    COLLECTIONS,
+    COLLECTION_EDITOR,
     SEARCH
 }
 
 class MainActivity :
     ComponentActivity() {
+
+    private var homeRequestRevision by
+        mutableIntStateOf(
+            0
+        )
+
+    override fun onNewIntent(
+        intent: Intent
+    ) {
+        super.onNewIntent(
+            intent
+        )
+
+        setIntent(
+            intent
+        )
+
+        if (
+            intent.action ==
+                Intent.ACTION_MAIN &&
+            intent.hasCategory(
+                Intent.CATEGORY_HOME
+            )
+        ) {
+            homeRequestRevision +=
+                1
+        }
+    }
 
     override fun onCreate(
         savedInstanceState: Bundle?
@@ -115,6 +153,17 @@ class MainActivity :
                         )
                     }
 
+                val collectionRepository =
+                    remember {
+                        CollectionRepository(
+                            context =
+                                applicationContext,
+                            collectionDao =
+                                database
+                                    .collectionDao()
+                        )
+                    }
+
                 val coroutineScope =
                     rememberCoroutineScope()
 
@@ -141,6 +190,49 @@ class MainActivity :
                                 .HOME
                         )
                     }
+
+                var editingCollectionId by
+                    remember {
+                        mutableStateOf<Long?>(
+                            null
+                        )
+                    }
+
+                var collectionEditorReturnScreen by
+                    remember {
+                        mutableStateOf(
+                            LauncherScreen
+                                .COLLECTIONS
+                        )
+                    }
+
+                /*
+                 * Android's Home button must always mean Home, even while the
+                 * launcher is showing Search, an editor, a collection manager,
+                 * or a collection bottom sheet.
+                 *
+                 * Unsaved editor state is intentionally discarded because the
+                 * screen leaves composition without calling its save callback.
+                 */
+                LaunchedEffect(
+                    homeRequestRevision
+                ) {
+                    if (
+                        homeRequestRevision >
+                        0
+                    ) {
+                        editingCollectionId =
+                            null
+
+                        collectionEditorReturnScreen =
+                            LauncherScreen
+                                .COLLECTIONS
+
+                        currentScreen =
+                            LauncherScreen
+                                .HOME
+                    }
+                }
 
                 /*
                  * Full catalog used by Search and Favorite Picker.
@@ -176,6 +268,68 @@ class MainActivity :
                     remember {
                         mutableStateOf(
                             false
+                        )
+                    }
+
+                var savedCollections by
+                    remember {
+                        mutableStateOf(
+                            emptyList<
+                                CollectionEntity
+                            >()
+                        )
+                    }
+
+                var savedCollectionApps by
+                    remember {
+                        mutableStateOf(
+                            emptyList<
+                                CollectionAppEntity
+                            >()
+                        )
+                    }
+
+
+                var savedCollectionsLoaded by
+                    remember {
+                        mutableStateOf(
+                            false
+                        )
+                    }
+
+                var savedCollectionAppsLoaded by
+                    remember {
+                        mutableStateOf(
+                            false
+                        )
+                    }
+
+                /*
+                 * Collections use the same fast Home strategy as Favorites:
+                 * resolve only saved members, without waiting for the full
+                 * installed-app catalog.
+                 */
+                var collectionAppsById by
+                    remember {
+                        mutableStateOf(
+                            emptyMap<
+                                Long,
+                                List<InstalledApp>
+                            >()
+                        )
+                    }
+
+                var collectionAppsLoaded by
+                    remember {
+                        mutableStateOf(
+                            false
+                        )
+                    }
+
+                var collectionRefreshRevision by
+                    remember {
+                        mutableStateOf(
+                            0
                         )
                     }
 
@@ -266,7 +420,8 @@ class MainActivity :
                 LaunchedEffect(
                     isHomeApp,
                     appRepository,
-                    favoriteRepository
+                    favoriteRepository,
+                    collectionRepository
                 ) {
                     if (
                         !isHomeApp
@@ -302,6 +457,21 @@ class MainActivity :
                                                     change.packageNames
                                             }
 
+                                    collectionAppsById =
+                                        collectionAppsById
+                                            .mapValues {
+                                                    (_, apps) ->
+
+                                                apps.filterNot {
+                                                        app ->
+
+                                                    app.user ==
+                                                        change.user &&
+                                                    app.packageName in
+                                                        change.packageNames
+                                                }
+                                            }
+
                                     change.packageNames
                                         .forEach {
                                                 packageName ->
@@ -313,10 +483,21 @@ class MainActivity :
                                                     user =
                                                         change.user
                                                 )
+
+                                            collectionRepository
+                                                .removePackage(
+                                                    packageName =
+                                                        packageName,
+                                                    user =
+                                                        change.user
+                                                )
                                         }
                                 }
 
                                 favoriteRefreshRevision +=
+                                    1
+
+                                collectionRefreshRevision +=
                                     1
 
                                 refreshInstalledApps()
@@ -348,6 +529,38 @@ class MainActivity :
                         }
                 }
 
+                LaunchedEffect(
+                    collectionRepository
+                ) {
+                    launch {
+                        collectionRepository
+                            .collections
+                            .collect {
+                                    collections ->
+
+                                savedCollections =
+                                    collections
+
+                                savedCollectionsLoaded =
+                                    true
+                            }
+                    }
+
+                    launch {
+                        collectionRepository
+                            .collectionApps
+                            .collect {
+                                    collectionApps ->
+
+                                savedCollectionApps =
+                                    collectionApps
+
+                                savedCollectionAppsLoaded =
+                                    true
+                            }
+                    }
+                }
+
                 /*
                  * Critical Home path:
                  *
@@ -376,6 +589,29 @@ class MainActivity :
                             )
 
                     favoriteAppsLoaded =
+                        true
+                }
+
+                LaunchedEffect(
+                    savedCollectionApps,
+                    savedCollectionAppsLoaded,
+                    collectionRefreshRevision,
+                    collectionRepository
+                ) {
+                    if (
+                        !savedCollectionAppsLoaded
+                    ) {
+                        return@LaunchedEffect
+                    }
+
+                    collectionAppsById =
+                        collectionRepository
+                            .resolveCollectionApps(
+                                savedApps =
+                                    savedCollectionApps
+                            )
+
+                    collectionAppsLoaded =
                         true
                 }
 
@@ -429,11 +665,22 @@ class MainActivity :
                         currentScreen
                     ) {
                         LauncherScreen.HOME -> {
-                            HomeScreen(
+                            key(
+                                homeRequestRevision
+                            ) {
+                                HomeScreen(
                                 favoriteApps =
                                     favoriteApps,
                                 favoritesLoaded =
                                     favoriteAppsLoaded,
+                                collections =
+                                    savedCollections,
+                                collectionsLoaded =
+                                    savedCollectionsLoaded &&
+                                        savedCollectionAppsLoaded &&
+                                        collectionAppsLoaded,
+                                collectionAppsById =
+                                    collectionAppsById,
                                 onAppClick = {
                                         app ->
 
@@ -488,10 +735,6 @@ class MainActivity :
                                                 )
                                             }
 
-                                    /*
-                                     * Update Home immediately; Room then
-                                     * becomes the persistent source of truth.
-                                     */
                                     favoriteApps =
                                         remainingFavorites
 
@@ -506,11 +749,6 @@ class MainActivity :
                                 onReorderFavorites = {
                                         reorderedApps ->
 
-                                    /*
-                                     * Reordering on Home is optimistic: the
-                                     * new order is visible on the next frame,
-                                     * then Room persists the same positions.
-                                     */
                                     favoriteApps =
                                         reorderedApps
 
@@ -522,6 +760,104 @@ class MainActivity :
                                                 )
                                         }
                                 },
+                                onEditCollection = {
+                                        collectionId ->
+
+                                    editingCollectionId =
+                                        collectionId
+
+                                    collectionEditorReturnScreen =
+                                        LauncherScreen
+                                            .HOME
+
+                                    currentScreen =
+                                        LauncherScreen
+                                            .COLLECTION_EDITOR
+                                },
+                                onDeleteCollection = {
+                                        collectionId ->
+
+                                    coroutineScope
+                                        .launch {
+                                            collectionRepository
+                                                .deleteCollection(
+                                                    collectionId =
+                                                        collectionId
+                                                )
+                                        }
+                                },
+                                onReorderCollections = {
+                                        reorderedCollections ->
+
+                                    savedCollections =
+                                        reorderedCollections
+
+                                    coroutineScope
+                                        .launch {
+                                            collectionRepository
+                                                .replaceCollectionOrder(
+                                                    reorderedCollections
+                                                )
+                                        }
+                                },
+                                onReorderCollectionApps = {
+                                        collectionId,
+                                        reorderedApps ->
+
+                                    collectionAppsById =
+                                        collectionAppsById +
+                                            (
+                                                collectionId to
+                                                    reorderedApps
+                                            )
+
+                                    coroutineScope
+                                        .launch {
+                                            collectionRepository
+                                                .replaceCollectionApps(
+                                                    collectionId =
+                                                        collectionId,
+                                                    apps =
+                                                        reorderedApps
+                                                )
+                                        }
+                                },
+                                onRemoveAppFromCollection = {
+                                        collectionId,
+                                        app ->
+
+                                    val remainingApps =
+                                        collectionAppsById[
+                                            collectionId
+                                        ]
+                                            .orEmpty()
+                                            .filterNot {
+                                                isSameApp(
+                                                    first =
+                                                        it,
+                                                    second =
+                                                        app
+                                                )
+                                            }
+
+                                    collectionAppsById =
+                                        collectionAppsById +
+                                            (
+                                                collectionId to
+                                                    remainingApps
+                                            )
+
+                                    coroutineScope
+                                        .launch {
+                                            collectionRepository
+                                                .replaceCollectionApps(
+                                                    collectionId =
+                                                        collectionId,
+                                                    apps =
+                                                        remainingApps
+                                                )
+                                        }
+                                },
                                 onUninstallApp = {
                                         app ->
 
@@ -529,7 +865,8 @@ class MainActivity :
                                         app
                                     )
                                 }
-                            )
+                                )
+                            }
                         }
 
                         LauncherScreen.FAVORITES -> {
@@ -538,6 +875,11 @@ class MainActivity :
                                     installedApps,
                                 initialSelection =
                                     favoriteApps,
+                                onManageCollections = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .COLLECTIONS
+                                },
                                 onCancel = {
                                     currentScreen =
                                         LauncherScreen
@@ -567,6 +909,157 @@ class MainActivity :
                                                 .replaceFavorites(
                                                     selectedApps
                                                 )
+                                        }
+                                }
+                            )
+                        }
+
+                        LauncherScreen.COLLECTIONS -> {
+                            CollectionManagerScreen(
+                                collections =
+                                    savedCollections,
+                                collectionMembers =
+                                    savedCollectionApps,
+                                resolvedAppsByCollection =
+                                    collectionAppsById,
+                                catalogLoaded =
+                                    installedAppsLoaded,
+                                onBack = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .FAVORITES
+                                },
+                                onCreateCollection = {
+                                    if (
+                                        savedCollections.size <
+                                        MAX_COLLECTIONS
+                                    ) {
+                                        editingCollectionId =
+                                            null
+
+                                        collectionEditorReturnScreen =
+                                            LauncherScreen
+                                                .COLLECTIONS
+
+                                        currentScreen =
+                                            LauncherScreen
+                                                .COLLECTION_EDITOR
+                                    }
+                                },
+                                onEditCollection = {
+                                        collectionId ->
+
+                                    editingCollectionId =
+                                        collectionId
+
+                                    collectionEditorReturnScreen =
+                                        LauncherScreen
+                                            .COLLECTIONS
+
+                                    currentScreen =
+                                        LauncherScreen
+                                            .COLLECTION_EDITOR
+                                },
+                                onDeleteCollection = {
+                                        collectionId ->
+
+                                    coroutineScope
+                                        .launch {
+                                            collectionRepository
+                                                .deleteCollection(
+                                                    collectionId =
+                                                        collectionId
+                                                )
+                                        }
+                                }
+                            )
+                        }
+
+                        LauncherScreen.COLLECTION_EDITOR -> {
+                            val editingCollection =
+                                editingCollectionId
+                                    ?.let {
+                                            collectionId ->
+
+                                        savedCollections
+                                            .firstOrNull {
+                                                    collection ->
+
+                                                collection.id ==
+                                                    collectionId
+                                            }
+                                    }
+
+                            CollectionEditorScreen(
+                                apps =
+                                    installedApps,
+                                initialName =
+                                    editingCollection
+                                        ?.name
+                                        .orEmpty(),
+                                initialSelection =
+                                    editingCollection
+                                        ?.let {
+                                                collection ->
+
+                                            collectionAppsById[
+                                                collection.id
+                                            ].orEmpty()
+                                        }
+                                        .orEmpty(),
+                                isEditing =
+                                    editingCollection !=
+                                        null,
+                                onCancel = {
+                                    editingCollectionId =
+                                        null
+
+                                    currentScreen =
+                                        collectionEditorReturnScreen
+                                },
+                                onSave = {
+                                        name,
+                                        selectedApps ->
+
+                                    val collectionId =
+                                        editingCollection
+                                            ?.id
+
+                                    editingCollectionId =
+                                        null
+
+                                    currentScreen =
+                                        collectionEditorReturnScreen
+
+                                    coroutineScope
+                                        .launch {
+                                            if (
+                                                collectionId ==
+                                                null
+                                            ) {
+                                                if (
+                                                    savedCollections.size <
+                                                    MAX_COLLECTIONS
+                                                ) {
+                                                    collectionRepository
+                                                        .createCollection(
+                                                            name =
+                                                                name,
+                                                            apps =
+                                                                selectedApps
+                                                        )
+                                                }
+                                            } else {
+                                                collectionRepository
+                                                    .updateCollection(
+                                                        collectionId =
+                                                            collectionId,
+                                                        name =
+                                                            name,
+                                                        apps =
+                                                            selectedApps
+                                                    )
+                                            }
                                         }
                                 }
                             )
@@ -762,15 +1255,12 @@ private fun DefaultLauncherSetupScreen(
                     .titleMedium
         )
 
-        Button(
+        LauncherPrimaryActionButton(
+            text =
+                "Set as default launcher",
             onClick =
                 onSetDefaultLauncher
-        ) {
-            Text(
-                text =
-                    "Set as default launcher"
-            )
-        }
+        )
     }
 }
 
@@ -783,4 +1273,3 @@ private fun isSameApp(
         first.user ==
             second.user
 }
-

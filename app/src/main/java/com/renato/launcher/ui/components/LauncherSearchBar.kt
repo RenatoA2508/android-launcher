@@ -12,7 +12,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,7 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.renato.launcher.ui.interactions.launcherClickable
+import com.renato.launcher.ui.interactions.launcherTransitionClickable
 
 @Composable
 fun LauncherSearchBar(
@@ -103,17 +102,16 @@ fun LauncherSearchBar(
                     if (
                         query.isNotEmpty()
                     ) {
-                        TextButton(
+                        LauncherTextActionButton(
+                            text =
+                                "×",
+                            fontSize =
+                                22.sp,
+                            deferActionForRipple =
+                                false,
                             onClick =
                                 onClear
-                        ) {
-                            Text(
-                                text =
-                                    "×",
-                                fontSize =
-                                    22.sp
-                            )
-                        }
+                        )
                     }
                 },
                 keyboardOptions =
@@ -154,7 +152,9 @@ fun LauncherSearchLauncher(
                 .clip(
                     shape
                 )
-                .launcherClickable(
+                .launcherTransitionClickable(
+                    shape =
+                        shape,
                     onClickLabel =
                         "Buscar aplicaciones",
                     onClick =
@@ -192,19 +192,12 @@ fun LauncherSearchLauncher(
 private fun SearchBackButton(
     onClick: () -> Unit
 ) {
-    /*
-     * TextButton already uses Material's ripple indication,
-     * so no custom press-scale animation is needed.
-     */
-    TextButton(
+    LauncherTextActionButton(
+        text =
+            "‹",
+        fontSize =
+            32.sp,
         onClick =
             onClick
-    ) {
-        Text(
-            text =
-                "‹",
-            fontSize =
-                32.sp
-        )
-    }
+    )
 }

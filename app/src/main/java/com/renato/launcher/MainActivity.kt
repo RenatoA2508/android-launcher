@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.UserManager
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -136,6 +137,11 @@ class MainActivity :
                 val roleManager =
                     getSystemService(
                         RoleManager::class.java
+                    )
+
+                val userManager =
+                    getSystemService(
+                        UserManager::class.java
                     )
 
                 val appRepository =
@@ -478,7 +484,9 @@ class MainActivity :
                     appRepository,
                     favoriteRepository,
                     recentRepository,
-                    collectionRepository
+                    collectionRepository,
+                    database,
+                    userManager
                 ) {
                     if (
                         !isHomeApp
@@ -554,34 +562,25 @@ class MainActivity :
                                      * reinstalling the same component cannot
                                      * resurrect stale launcher history.
                                      */
+                                    val removedUserSerial =
+                                        userManager
+                                            .getSerialNumberForUser(
+                                                change.user
+                                            )
+
                                     LauncherMutationQueue
                                         .submit {
                                             change.packageNames
                                                 .forEach {
                                                         packageName ->
 
-                                                    favoriteRepository
-                                                        .removePackage(
+                                                    database
+                                                        .cleanupDao()
+                                                        .deletePackageReferences(
                                                             packageName =
                                                                 packageName,
-                                                            user =
-                                                                change.user
-                                                        )
-
-                                                    collectionRepository
-                                                        .removePackage(
-                                                            packageName =
-                                                                packageName,
-                                                            user =
-                                                                change.user
-                                                        )
-
-                                                    recentRepository
-                                                        .removePackage(
-                                                            packageName =
-                                                                packageName,
-                                                            user =
-                                                                change.user
+                                                            userSerial =
+                                                                removedUserSerial
                                                         )
                                                 }
                                         }

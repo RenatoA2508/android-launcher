@@ -10,7 +10,6 @@ import com.renato.launcher.data.database.collection.CollectionDao
 import com.renato.launcher.data.database.collection.CollectionEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 const val MAX_COLLECTIONS = 4
@@ -44,44 +43,23 @@ class CollectionRepository(
         name: String,
         apps: List<InstalledApp>
     ): Long {
-        check(
-            collections
-                .first()
-                .size <
-                MAX_COLLECTIONS
-        ) {
-            "A maximum of $MAX_COLLECTIONS collections is allowed."
-        }
-
         val normalizedName =
             normalizeName(
                 name
             )
 
-        val collectionId =
-            collectionDao
-                .insertCollection(
-                    CollectionEntity(
-                        name =
-                            normalizedName,
-                        position =
-                            collectionDao
-                                .nextCollectionPosition()
-                    )
-                )
-
-        collectionDao
-            .replaceCollectionApps(
-                collectionId =
-                    collectionId,
+        return collectionDao
+            .createCollection(
+                name =
+                    normalizedName,
                 apps =
                     apps.toEntities(
                         collectionId =
-                            collectionId
-                    )
+                            0L
+                    ),
+                maxCollections =
+                    MAX_COLLECTIONS
             )
-
-        return collectionId
     }
 
     suspend fun updateCollection(
@@ -347,26 +325,37 @@ class CollectionRepository(
     private fun List<InstalledApp>.toEntities(
         collectionId: Long
     ): List<CollectionAppEntity> {
-        return mapIndexed {
-                index,
-                app ->
-
-            CollectionAppEntity(
-                collectionId =
-                    collectionId,
+        return distinctBy { app ->
+            appKey(
                 componentName =
                     app.componentName
                         .flattenToString(),
-                packageName =
-                    app.packageName,
                 userSerial =
                     getUserSerial(
                         app.user
-                    ),
-                position =
-                    index
+                    )
             )
         }
+            .mapIndexed {
+                    index,
+                    app ->
+
+                CollectionAppEntity(
+                    collectionId =
+                        collectionId,
+                    componentName =
+                        app.componentName
+                            .flattenToString(),
+                    packageName =
+                        app.packageName,
+                    userSerial =
+                        getUserSerial(
+                            app.user
+                        ),
+                    position =
+                        index
+                )
+            }
     }
 
     private fun normalizeName(

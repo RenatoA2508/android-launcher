@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.UserManager
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -22,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,6 +34,7 @@ import com.renato.launcher.collections.CollectionManagerScreen
 import com.renato.launcher.collections.CollectionRepository
 import com.renato.launcher.collections.MAX_COLLECTIONS
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.data.LauncherMutationQueue
 import com.renato.launcher.data.database.LauncherDatabase
 import com.renato.launcher.data.database.collection.CollectionAppEntity
 import com.renato.launcher.data.database.collection.CollectionEntity
@@ -46,6 +47,7 @@ import com.renato.launcher.home.HomeScreen
 import com.renato.launcher.recents.RecentRepository
 import com.renato.launcher.search.SearchScreen
 import com.renato.launcher.ui.components.LauncherPrimaryActionButton
+import com.renato.launcher.ui.icons.invalidateLauncherAppIcons
 import com.renato.launcher.ui.theme.LauncherTheme
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -66,6 +68,18 @@ class MainActivity :
     ComponentActivity() {
 
     private var homeRequestRevision by
+        mutableIntStateOf(
+            0
+        )
+
+    /*
+     * Activity lifecycle revision used to re-check whether this process still
+     * owns ROLE_HOME after returning from Settings or another external screen.
+     *
+     * The default launcher can be changed while this singleTask Activity is
+     * alive, so the value captured during onCreate is not sufficient.
+     */
+    private var resumeRevision by
         mutableIntStateOf(
             0
         )
@@ -93,6 +107,13 @@ class MainActivity :
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        resumeRevision +=
+            1
+    }
+
     override fun onCreate(
         savedInstanceState: Bundle?
     ) {
@@ -116,6 +137,11 @@ class MainActivity :
                 val roleManager =
                     getSystemService(
                         RoleManager::class.java
+                    )
+
+                val userManager =
+                    getSystemService(
+                        UserManager::class.java
                     )
 
                 val appRepository =
@@ -166,9 +192,6 @@ class MainActivity :
                         )
                     }
 
-                val coroutineScope =
-                    rememberCoroutineScope()
-
                 val catalogRefreshMutex =
                     remember {
                         Mutex()
@@ -207,6 +230,43 @@ class MainActivity :
                                 .COLLECTIONS
                         )
                     }
+
+                /*
+                 * Re-check ROLE_HOME every time the Activity resumes.
+                 *
+                 * This covers changing the default Home application from
+                 * Android Settings while our singleTask Activity remains alive.
+                 * If the role was lost, discard transient launcher navigation
+                 * so regaining the role always starts from a clean Home state.
+                 */
+                LaunchedEffect(
+                    resumeRevision
+                ) {
+                    val currentlyHome =
+                        roleManager
+                            .isRoleHeld(
+                                RoleManager
+                                    .ROLE_HOME
+                            )
+
+                    if (
+                        !currentlyHome
+                    ) {
+                        editingCollectionId =
+                            null
+
+                        collectionEditorReturnScreen =
+                            LauncherScreen
+                                .COLLECTIONS
+
+                        currentScreen =
+                            LauncherScreen
+                                .HOME
+                    }
+
+                    isHomeApp =
+                        currentlyHome
+                }
 
                 /*
                  * Android's Home button must always mean Home, even while the
@@ -423,7 +483,10 @@ class MainActivity :
                     isHomeApp,
                     appRepository,
                     favoriteRepository,
-                    collectionRepository
+                    recentRepository,
+                    collectionRepository,
+                    database,
+                    userManager
                 ) {
                     if (
                         !isHomeApp
@@ -436,6 +499,20 @@ class MainActivity :
                             .appChanges
                             .collect {
                                     change ->
+
+                                /*
+                                 * A package update/reinstall can preserve the
+                                 * same component name while changing its icon.
+                                 * Invalidate only affected process-cache rows
+                                 * before resolving the refreshed catalog/Home
+                                 * snapshots.
+                                 */
+                                invalidateLauncherAppIcons(
+                                    packageNames =
+                                        change.packageNames,
+                                    user =
+                                        change.user
+                                )
 
                                 if (
                                     change.type ==
@@ -474,25 +551,38 @@ class MainActivity :
                                                 }
                                             }
 
-                                    change.packageNames
-                                        .forEach {
-                                                packageName ->
+                                    /*
+                                     * Persist package cleanup outside the
+                                     * Activity coroutine. A configuration
+                                     * recreation must not cancel a confirmed
+                                     * uninstall cleanup after the callback has
+                                     * already been consumed.
+                                     *
+                                     * Recents/Search history is removed too so
+                                     * reinstalling the same component cannot
+                                     * resurrect stale launcher history.
+                                     */
+                                    val removedUserSerial =
+                                        userManager
+                                            .getSerialNumberForUser(
+                                                change.user
+                                            )
 
-                                            favoriteRepository
-                                                .removePackage(
-                                                    packageName =
-                                                        packageName,
-                                                    user =
-                                                        change.user
-                                                )
+                                    LauncherMutationQueue
+                                        .submit {
+                                            change.packageNames
+                                                .forEach {
+                                                        packageName ->
 
-                                            collectionRepository
-                                                .removePackage(
-                                                    packageName =
-                                                        packageName,
-                                                    user =
-                                                        change.user
-                                                )
+                                                    database
+                                                        .cleanupDao()
+                                                        .deletePackageReferences(
+                                                            packageName =
+                                                                packageName,
+                                                            userSerial =
+                                                                removedUserSerial
+                                                        )
+                                                }
                                         }
                                 }
 
@@ -691,8 +781,8 @@ class MainActivity :
                                             app
                                         )
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             recentRepository
                                                 .recordLaunch(
                                                     app
@@ -740,8 +830,8 @@ class MainActivity :
                                     favoriteApps =
                                         remainingFavorites
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             favoriteRepository
                                                 .replaceFavorites(
                                                     remainingFavorites
@@ -754,8 +844,8 @@ class MainActivity :
                                     favoriteApps =
                                         reorderedApps
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             favoriteRepository
                                                 .replaceFavorites(
                                                     reorderedApps
@@ -779,8 +869,8 @@ class MainActivity :
                                 onDeleteCollection = {
                                         collectionId ->
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             collectionRepository
                                                 .deleteCollection(
                                                     collectionId =
@@ -794,8 +884,8 @@ class MainActivity :
                                     savedCollections =
                                         reorderedCollections
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             collectionRepository
                                                 .replaceCollectionOrder(
                                                     reorderedCollections
@@ -813,8 +903,8 @@ class MainActivity :
                                                     reorderedApps
                                             )
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             collectionRepository
                                                 .replaceCollectionApps(
                                                     collectionId =
@@ -849,8 +939,8 @@ class MainActivity :
                                                     remainingApps
                                             )
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             collectionRepository
                                                 .replaceCollectionApps(
                                                     collectionId =
@@ -905,8 +995,8 @@ class MainActivity :
                                         LauncherScreen
                                             .HOME
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             favoriteRepository
                                                 .replaceFavorites(
                                                     selectedApps
@@ -965,8 +1055,8 @@ class MainActivity :
                                 onDeleteCollection = {
                                         collectionId ->
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             collectionRepository
                                                 .deleteCollection(
                                                     collectionId =
@@ -1027,21 +1117,24 @@ class MainActivity :
                                         editingCollection
                                             ?.id
 
+                                    val canCreateCollection =
+                                        savedCollections.size <
+                                            MAX_COLLECTIONS
+
                                     editingCollectionId =
                                         null
 
                                     currentScreen =
                                         collectionEditorReturnScreen
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             if (
                                                 collectionId ==
                                                 null
                                             ) {
                                                 if (
-                                                    savedCollections.size <
-                                                    MAX_COLLECTIONS
+                                                    canCreateCollection
                                                 ) {
                                                     collectionRepository
                                                         .createCollection(
@@ -1092,8 +1185,8 @@ class MainActivity :
                                             app
                                         )
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             recentRepository
                                                 .recordLaunch(
                                                     app
@@ -1135,8 +1228,8 @@ class MainActivity :
                                     favoriteApps =
                                         remainingFavorites
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             favoriteRepository
                                                 .replaceFavorites(
                                                     remainingFavorites
@@ -1181,8 +1274,8 @@ class MainActivity :
                                             app
                                         )
 
-                                    coroutineScope
-                                        .launch {
+                                    LauncherMutationQueue
+                                        .submit {
                                             recentRepository
                                                 .recordLaunch(
                                                     app

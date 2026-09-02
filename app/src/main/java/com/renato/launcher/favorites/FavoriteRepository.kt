@@ -34,24 +34,36 @@ class FavoriteRepository(
         apps: List<InstalledApp>
     ) {
         val entities =
-            apps.mapIndexed {
-                    index,
-                    app ->
+            apps
+                .distinctBy { app ->
+                    appKey(
+                        componentName =
+                            app.componentName
+                                .flattenToString(),
+                        userSerial =
+                            getUserSerial(
+                                app.user
+                            )
+                    )
+                }
+                .mapIndexed {
+                        index,
+                        app ->
 
-                FavoriteEntity(
-                    componentName =
-                        app.componentName
-                            .flattenToString(),
-                    packageName =
-                        app.packageName,
-                    userSerial =
-                        getUserSerial(
-                            app.user
-                        ),
-                    position =
-                        index
-                )
-            }
+                    FavoriteEntity(
+                        componentName =
+                            app.componentName
+                                .flattenToString(),
+                        packageName =
+                            app.packageName,
+                        userSerial =
+                            getUserSerial(
+                                app.user
+                            ),
+                        position =
+                            index
+                    )
+                }
 
         favoriteDao.replaceAll(
             entities

@@ -38,6 +38,9 @@ abstract class LauncherDatabase :
     abstract fun collectionDao():
         CollectionDao
 
+    abstract fun cleanupDao():
+        LauncherCleanupDao
+
     companion object {
 
         @Volatile

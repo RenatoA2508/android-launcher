@@ -51,6 +51,15 @@ interface CollectionDao {
     suspend fun nextCollectionPosition():
         Int
 
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM collections
+        """
+    )
+    suspend fun collectionCount():
+        Int
+
     @Insert(
         onConflict =
             OnConflictStrategy.ABORT
@@ -66,6 +75,53 @@ interface CollectionDao {
     suspend fun insertCollectionApps(
         apps: List<CollectionAppEntity>
     )
+
+    /**
+     * Collection creation is one database transaction.
+     *
+     * Previously the collection row was committed first and its app rows were
+     * written by a second transaction. A process death between those writes
+     * could therefore leave an unintended empty collection. The max-count
+     * check, position allocation, parent insert and child inserts now commit
+     * together or not at all.
+     */
+    @Transaction
+    suspend fun createCollection(
+        name: String,
+        apps: List<CollectionAppEntity>,
+        maxCollections: Int
+    ): Long {
+        check(
+            collectionCount() <
+                maxCollections
+        ) {
+            "A maximum of $maxCollections collections is allowed."
+        }
+
+        val collectionId =
+            insertCollection(
+                CollectionEntity(
+                    name = name,
+                    position =
+                        nextCollectionPosition()
+                )
+            )
+
+        if (
+            apps.isNotEmpty()
+        ) {
+            insertCollectionApps(
+                apps.map { app ->
+                    app.copy(
+                        collectionId =
+                            collectionId
+                    )
+                }
+            )
+        }
+
+        return collectionId
+    }
 
     @Query(
         """

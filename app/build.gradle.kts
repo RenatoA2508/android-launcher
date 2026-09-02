@@ -1,8 +1,16 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.androidx.baselineprofile)
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -17,28 +25,28 @@ android {
         minSdk = 29
         targetSdk = 37
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0-rc1"
 
         testInstrumentationRunner =
             "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+        }
+    }
+
     buildTypes {
         release {
-            /*
-             * TEMPORARY:
-             *
-             * We use the debug signing key only so that
-             * we can install the optimized release build
-             * directly on our development phone.
-             *
-             * Before any real distribution, this will
-             * be replaced by the production signing setup.
-             */
+            signingConfig = signingConfigs.getByName("release")
 
             /*
              * AGP 9.3+:
-             * enables R8 code and resource optimization.
+             * enables R8 code and optimized resource shrinking.
              */
             optimization {
                 enable = true

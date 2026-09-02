@@ -67,6 +67,27 @@ class RecentRepository(
         )
     }
 
+    /**
+     * A confirmed uninstall must remove launcher history as well.
+     *
+     * Otherwise reinstalling the same package/component later could resurrect
+     * an old Recents or "Buscadas recientemente" entry.
+     */
+    suspend fun removePackage(
+        packageName: String,
+        user: android.os.UserHandle
+    ) {
+        recentDao.deletePackageHistory(
+            packageName =
+                packageName,
+            userSerial =
+                userManager
+                    .getSerialNumberForUser(
+                        user
+                    )
+        )
+    }
+
     fun buildSections(
         savedRecentApps:
             List<RecentAppEntity>,

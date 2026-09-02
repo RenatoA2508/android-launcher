@@ -46,6 +46,7 @@ import com.renato.launcher.home.HomeScreen
 import com.renato.launcher.recents.RecentRepository
 import com.renato.launcher.search.SearchScreen
 import com.renato.launcher.ui.components.LauncherPrimaryActionButton
+import com.renato.launcher.ui.icons.invalidateLauncherAppIcons
 import com.renato.launcher.ui.theme.LauncherTheme
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -476,6 +477,7 @@ class MainActivity :
                     isHomeApp,
                     appRepository,
                     favoriteRepository,
+                    recentRepository,
                     collectionRepository
                 ) {
                     if (
@@ -489,6 +491,20 @@ class MainActivity :
                             .appChanges
                             .collect {
                                     change ->
+
+                                /*
+                                 * A package update/reinstall can preserve the
+                                 * same component name while changing its icon.
+                                 * Invalidate only affected process-cache rows
+                                 * before resolving the refreshed catalog/Home
+                                 * snapshots.
+                                 */
+                                invalidateLauncherAppIcons(
+                                    packageNames =
+                                        change.packageNames,
+                                    user =
+                                        change.user
+                                )
 
                                 if (
                                     change.type ==
@@ -527,25 +543,47 @@ class MainActivity :
                                                 }
                                             }
 
-                                    change.packageNames
-                                        .forEach {
-                                                packageName ->
+                                    /*
+                                     * Persist package cleanup outside the
+                                     * Activity coroutine. A configuration
+                                     * recreation must not cancel a confirmed
+                                     * uninstall cleanup after the callback has
+                                     * already been consumed.
+                                     *
+                                     * Recents/Search history is removed too so
+                                     * reinstalling the same component cannot
+                                     * resurrect stale launcher history.
+                                     */
+                                    LauncherMutationQueue
+                                        .submit {
+                                            change.packageNames
+                                                .forEach {
+                                                        packageName ->
 
-                                            favoriteRepository
-                                                .removePackage(
-                                                    packageName =
-                                                        packageName,
-                                                    user =
-                                                        change.user
-                                                )
+                                                    favoriteRepository
+                                                        .removePackage(
+                                                            packageName =
+                                                                packageName,
+                                                            user =
+                                                                change.user
+                                                        )
 
-                                            collectionRepository
-                                                .removePackage(
-                                                    packageName =
-                                                        packageName,
-                                                    user =
-                                                        change.user
-                                                )
+                                                    collectionRepository
+                                                        .removePackage(
+                                                            packageName =
+                                                                packageName,
+                                                            user =
+                                                                change.user
+                                                        )
+
+                                                    recentRepository
+                                                        .removePackage(
+                                                            packageName =
+                                                                packageName,
+                                                            user =
+                                                                change.user
+                                                        )
+                                                }
                                         }
                                 }
 

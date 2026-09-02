@@ -27,6 +27,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.renato.launcher.allapps.AllAppsScreen
 import com.renato.launcher.apps.AppRepository
 import com.renato.launcher.collections.CollectionEditorScreen
 import com.renato.launcher.collections.CollectionManagerScreen
@@ -57,7 +58,8 @@ private enum class LauncherScreen {
     FAVORITES,
     COLLECTIONS,
     COLLECTION_EDITOR,
-    SEARCH
+    SEARCH,
+    ALL_APPS
 }
 
 class MainActivity :
@@ -235,7 +237,7 @@ class MainActivity :
                 }
 
                 /*
-                 * Full catalog used by Search and Favorite Picker.
+                 * Full catalog used by Search, All Apps and Favorite Picker.
                  *
                  * It is deliberately independent from Home favorites.
                  */
@@ -1148,10 +1150,63 @@ class MainActivity :
                                         app
                                     )
                                 },
+                                onOpenAllApps = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .ALL_APPS
+                                },
                                 onBack = {
                                     currentScreen =
                                         LauncherScreen
                                             .HOME
+                                }
+                            )
+                        }
+
+                        LauncherScreen.ALL_APPS -> {
+                            AllAppsScreen(
+                                apps =
+                                    installedApps,
+                                appsLoaded =
+                                    installedAppsLoaded,
+                                onAppClick = {
+                                        app ->
+
+                                    currentScreen =
+                                        LauncherScreen
+                                            .HOME
+
+                                    appRepository
+                                        .launch(
+                                            app
+                                        )
+
+                                    coroutineScope
+                                        .launch {
+                                            recentRepository
+                                                .recordLaunch(
+                                                    app
+                                                )
+                                        }
+                                },
+                                onAppInfo = {
+                                        app ->
+
+                                    openAppInfo(
+                                        app
+                                    )
+                                },
+                                onUninstallApp = {
+                                        app ->
+
+                                    requestAppUninstall(
+                                        app
+                                    )
+                                },
+                                onBack = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .SEARCH
                                 }
                             )
                         }

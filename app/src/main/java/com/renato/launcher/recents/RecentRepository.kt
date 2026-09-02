@@ -74,7 +74,7 @@ class RecentRepository(
             List<RecentSearchEntity>,
         installedApps:
             List<InstalledApp>,
-        recentLimit: Int = 8,
+        recentLimit: Int = 4,
         searchedLimit: Int = 4
     ): RecentSections {
 

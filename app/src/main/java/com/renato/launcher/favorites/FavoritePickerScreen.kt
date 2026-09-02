@@ -1097,13 +1097,7 @@ private fun PickerHeader(
             Modifier
                 .fillMaxWidth(),
         color =
-            MaterialTheme
-                .colorScheme
-                .surface
-                .copy(
-                    alpha =
-                        0.84f
-                )
+            Color.Transparent
     ) {
 
         Row(

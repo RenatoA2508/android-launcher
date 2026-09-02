@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
@@ -38,12 +39,7 @@ fun LauncherSearchBar(
         modifier =
             Modifier.fillMaxWidth(),
         color =
-            MaterialTheme
-                .colorScheme
-                .surface
-                .copy(
-                    alpha = 0.88f
-                )
+            Color.Transparent
     ) {
         Row(
             modifier =

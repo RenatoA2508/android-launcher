@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -69,6 +71,7 @@ import com.renato.launcher.ui.components.LauncherAppIconWithBadge
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 import com.renato.launcher.ui.interactions.launcherAppCombinedClickable
+import com.renato.launcher.ui.interactions.launcherTransitionClickable
 
 @Composable
 fun SearchScreen(
@@ -83,6 +86,7 @@ fun SearchScreen(
     onAppInfo: (InstalledApp) -> Unit,
     onRemoveFavorite: (InstalledApp) -> Unit,
     onUninstallApp: (InstalledApp) -> Unit,
+    onOpenAllApps: () -> Unit,
     onBack: () -> Unit
 ) {
     SearchWindowEffect()
@@ -164,6 +168,29 @@ fun SearchScreen(
         }
 
     /*
+     * Empty Search is intentionally one compact row per history section.
+     * The repository also caps these lists at four; the take() calls keep the
+     * layout invariant even if another caller supplies a larger list later.
+     */
+    val compactRecentApps =
+        remember(
+            recentApps
+        ) {
+            recentApps.take(
+                4
+            )
+        }
+
+    val compactRecentSearchApps =
+        remember(
+            recentSearchApps
+        ) {
+            recentSearchApps.take(
+                4
+            )
+        }
+
+    /*
      * Shared launcher icon cache.
      *
      * Empty Search:
@@ -175,8 +202,8 @@ fun SearchScreen(
     val iconsToPreload =
         if (query.isBlank()) {
 
-            recentApps +
-                recentSearchApps
+            compactRecentApps +
+                compactRecentSearchApps
 
         } else {
 
@@ -438,7 +465,7 @@ fun SearchScreen(
                     ),
                 verticalArrangement =
                     Arrangement.spacedBy(
-                        6.dp
+                        4.dp
                     )
             ) {
 
@@ -450,186 +477,199 @@ fun SearchScreen(
 
                 if (query.isBlank()) {
 
+                    /*
+                     * RECENT APPS
+                     *
+                     * A single compact row keeps empty Search inside the
+                     * visible area above the keyboard.
+                     */
                     if (
-                        recentApps.isEmpty() &&
-                        recentSearchApps.isEmpty()
+                        compactRecentApps
+                            .isNotEmpty()
                     ) {
-
                         item(
                             key =
-                                "empty-search",
+                                "recent-heading",
                             contentType =
-                                "message",
+                                "heading",
                             span = {
                                 GridItemSpan(
                                     maxLineSpan
                                 )
                             }
                         ) {
-
-                            EmptySearchState()
+                            SearchSectionHeader(
+                                title =
+                                    "Recientes"
+                            )
                         }
 
-                    } else {
+                        items(
+                            items =
+                                compactRecentApps,
+                            key = {
+                                    app ->
 
-                        /*
-                         * RECENT APPS
-                         */
-                        if (
-                            recentApps.isNotEmpty()
+                                "recent:" +
+                                    appKey(
+                                        app
+                                    )
+                            },
+                            contentType = {
+                                "app"
+                            }
                         ) {
+                                app ->
 
-                            item(
-                                key =
-                                    "recent-heading",
-                                contentType =
-                                    "heading",
-                                span = {
-                                    GridItemSpan(
-                                        maxLineSpan
+                            SearchAppItem(
+                                app =
+                                    app,
+                                compact =
+                                    true,
+                                isFavorite =
+                                    appKey(app) in
+                                        favoriteAppKeys,
+                                notificationCount =
+                                    NotificationBadgeStore
+                                        .countFor(
+                                            counts =
+                                                notificationCounts,
+                                            app =
+                                                app
+                                        ),
+                                onClick = {
+                                    onAppClick(
+                                        app,
+                                        false
+                                    )
+                                },
+                                onAppInfo = {
+                                    onAppInfo(
+                                        app
+                                    )
+                                },
+                                onRemoveFavorite = {
+                                    onRemoveFavorite(
+                                        app
+                                    )
+                                },
+                                onUninstallApp = {
+                                    onUninstallApp(
+                                        app
                                     )
                                 }
-                            ) {
+                            )
+                        }
+                    }
 
-                                SearchSectionHeader(
-                                    title =
-                                        "Recientes"
+                    /*
+                     * RECENTLY SEARCHED APPS
+                     */
+                    if (
+                        compactRecentSearchApps
+                            .isNotEmpty()
+                    ) {
+                        item(
+                            key =
+                                "recent-search-heading",
+                            contentType =
+                                "heading",
+                            span = {
+                                GridItemSpan(
+                                    maxLineSpan
                                 )
                             }
-
-                            items(
-                                items =
-                                    recentApps,
-                                key = { app ->
-
-                                    "recent:" +
-                                        appKey(
-                                            app
-                                        )
-                                },
-                                contentType = {
-                                    "app"
-                                }
-                            ) { app ->
-
-                                SearchAppItem(
-                                    app =
-                                        app,
-                                    isFavorite =
-                                        appKey(app) in
-                                            favoriteAppKeys,
-                                    notificationCount =
-                                        NotificationBadgeStore
-                                            .countFor(
-                                                counts =
-                                                    notificationCounts,
-                                                app =
-                                                    app
-                                            ),
-                                    onClick = {
-                                        onAppClick(
-                                            app,
-                                            false
-                                        )
-                                    },
-                                    onAppInfo = {
-                                        onAppInfo(
-                                            app
-                                        )
-                                    },
-                                    onRemoveFavorite = {
-                                        onRemoveFavorite(
-                                            app
-                                        )
-                                    },
-                                    onUninstallApp = {
-                                        onUninstallApp(
-                                            app
-                                        )
-                                    }
-                                )
-                            }
+                        ) {
+                            SearchSectionHeader(
+                                title =
+                                    "Buscadas recientemente"
+                            )
                         }
 
-                        /*
-                         * RECENTLY SEARCHED APPS
-                         */
-                        if (
-                            recentSearchApps
-                                .isNotEmpty()
-                        ) {
+                        items(
+                            items =
+                                compactRecentSearchApps,
+                            key = {
+                                    app ->
 
-                            item(
-                                key =
-                                    "recent-search-heading",
-                                contentType =
-                                    "heading",
-                                span = {
-                                    GridItemSpan(
-                                        maxLineSpan
+                                "searched:" +
+                                    appKey(
+                                        app
+                                    )
+                            },
+                            contentType = {
+                                "app"
+                            }
+                        ) {
+                                app ->
+
+                            SearchAppItem(
+                                app =
+                                    app,
+                                compact =
+                                    true,
+                                isFavorite =
+                                    appKey(app) in
+                                        favoriteAppKeys,
+                                notificationCount =
+                                    NotificationBadgeStore
+                                        .countFor(
+                                            counts =
+                                                notificationCounts,
+                                            app =
+                                                app
+                                        ),
+                                onClick = {
+                                    onAppClick(
+                                        app,
+                                        true
+                                    )
+                                },
+                                onAppInfo = {
+                                    onAppInfo(
+                                        app
+                                    )
+                                },
+                                onRemoveFavorite = {
+                                    onRemoveFavorite(
+                                        app
+                                    )
+                                },
+                                onUninstallApp = {
+                                    onUninstallApp(
+                                        app
                                     )
                                 }
-                            ) {
-
-                                SearchSectionHeader(
-                                    title =
-                                        "Buscadas recientemente"
-                                )
-                            }
-
-                            items(
-                                items =
-                                    recentSearchApps,
-                                key = { app ->
-
-                                    "searched:" +
-                                        appKey(
-                                            app
-                                        )
-                                },
-                                contentType = {
-                                    "app"
-                                }
-                            ) { app ->
-
-                                SearchAppItem(
-                                    app =
-                                        app,
-                                    isFavorite =
-                                        appKey(app) in
-                                            favoriteAppKeys,
-                                    notificationCount =
-                                        NotificationBadgeStore
-                                            .countFor(
-                                                counts =
-                                                    notificationCounts,
-                                                app =
-                                                    app
-                                            ),
-                                    onClick = {
-                                        onAppClick(
-                                            app,
-                                            true
-                                        )
-                                    },
-                                    onAppInfo = {
-                                        onAppInfo(
-                                            app
-                                        )
-                                    },
-                                    onRemoveFavorite = {
-                                        onRemoveFavorite(
-                                            app
-                                        )
-                                    },
-                                    onUninstallApp = {
-                                        onUninstallApp(
-                                            app
-                                        )
-                                    }
-                                )
-                            }
+                            )
                         }
+                    }
+
+                    /*
+                     * All Apps is always available from empty Search, even when
+                     * history has not been populated yet.
+                     */
+                    item(
+                        key =
+                            "all-apps-launcher",
+                        contentType =
+                            "action",
+                        span = {
+                            GridItemSpan(
+                                maxLineSpan
+                            )
+                        }
+                    ) {
+                        SearchAllAppsButton(
+                            onClick = {
+                                keyboardController
+                                    ?.hide()
+
+                                focusManager
+                                    .clearFocus()
+
+                                onOpenAllApps()
+                            }
+                        )
                     }
 
                 } else if (
@@ -750,12 +790,12 @@ private fun SearchSectionHeader(
         modifier =
             Modifier.padding(
                 top =
-                    8.dp,
+                    4.dp,
                 bottom =
                     0.dp
             ),
         fontSize =
-            17.sp,
+            15.sp,
         fontWeight =
             FontWeight.SemiBold,
         color =
@@ -766,57 +806,89 @@ private fun SearchSectionHeader(
 }
 
 @Composable
-private fun EmptySearchState() {
+private fun SearchAllAppsButton(
+    onClick: () -> Unit
+) {
+    val shape =
+        RoundedCornerShape(
+            18.dp
+        )
 
-    Column(
+    Surface(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(
                     top =
-                        40.dp
+                        8.dp
                 ),
-        horizontalAlignment =
-            Alignment.CenterHorizontally
-    ) {
-
-        Text(
-            text =
-                "Buscar aplicaciones",
-            fontSize =
-                18.sp,
-            fontWeight =
-                FontWeight.Medium,
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onSurface
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    6.dp
+        shape =
+            shape,
+        color =
+            MaterialTheme
+                .colorScheme
+                .surfaceContainer
+                .copy(
+                    alpha =
+                        0.78f
                 )
-        )
-
-        Text(
-            text =
-                "Empieza a escribir el nombre de una aplicación.",
+    ) {
+        Row(
             modifier =
-                Modifier.padding(
-                    horizontal =
-                        24.dp
-                ),
-            textAlign =
-                TextAlign.Center,
-            fontSize =
-                14.sp,
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onSurfaceVariant
-        )
+                Modifier
+                    .fillMaxWidth()
+                    .testTag(
+                        ALL_APPS_BUTTON_TAG
+                    )
+                    .heightIn(
+                        min =
+                            48.dp
+                    )
+                    .launcherTransitionClickable(
+                        shape =
+                            shape,
+                        onClickLabel =
+                            "Todas las aplicaciones",
+                        onClick =
+                            onClick
+                    )
+                    .padding(
+                        horizontal =
+                            16.dp,
+                        vertical =
+                            10.dp
+                    ),
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+            Text(
+                text =
+                    "Todas las aplicaciones",
+                modifier =
+                    Modifier.weight(
+                        1f
+                    ),
+                fontSize =
+                    15.sp,
+                fontWeight =
+                    FontWeight.SemiBold,
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .onSurface
+            )
+
+            Text(
+                text =
+                    "›",
+                fontSize =
+                    24.sp,
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -854,6 +926,7 @@ private fun NoResultsState(
 private fun SearchAppItem(
     app: InstalledApp,
     testTag: String? = null,
+    compact: Boolean = false,
     isFavorite: Boolean,
     notificationCount: Int,
     onClick: () -> Unit,
@@ -931,7 +1004,13 @@ private fun SearchAppItem(
                         horizontal =
                             3.dp,
                         vertical =
-                            6.dp
+                            if (
+                                compact
+                            ) {
+                                3.dp
+                            } else {
+                                6.dp
+                            }
                     ),
             horizontalAlignment =
                 Alignment.CenterHorizontally
@@ -942,7 +1021,13 @@ private fun SearchAppItem(
                 contentDescription =
                     app.label,
                 iconSize =
-                    44.dp,
+                    if (
+                        compact
+                    ) {
+                        36.dp
+                    } else {
+                        44.dp
+                    },
                 notificationCount =
                     notificationCount
             )
@@ -950,7 +1035,13 @@ private fun SearchAppItem(
             Spacer(
                 modifier =
                     Modifier.height(
-                        5.dp
+                        if (
+                            compact
+                        ) {
+                            3.dp
+                        } else {
+                            5.dp
+                        }
                     )
             )
 
@@ -958,15 +1049,33 @@ private fun SearchAppItem(
                 text =
                     app.label,
                 maxLines =
-                    2,
+                    if (
+                        compact
+                    ) {
+                        1
+                    } else {
+                        2
+                    },
                 overflow =
                     TextOverflow.Ellipsis,
                 textAlign =
                     TextAlign.Center,
                 fontSize =
-                    12.sp,
+                    if (
+                        compact
+                    ) {
+                        11.sp
+                    } else {
+                        12.sp
+                    },
                 lineHeight =
-                    13.sp,
+                    if (
+                        compact
+                    ) {
+                        12.sp
+                    } else {
+                        13.sp
+                    },
                 color =
                     MaterialTheme
                         .colorScheme
@@ -1124,3 +1233,5 @@ private const val SEARCH_FIELD_TAG =
 private const val SEARCH_RESULT_TAG_PREFIX =
     "launcher_search_result_"
 
+private const val ALL_APPS_BUTTON_TAG =
+    "launcher_all_apps_button"

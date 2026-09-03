@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
+const val MAX_FAVORITES = 14
+
 class FavoriteRepository(
     context: Context,
     private val favoriteDao: FavoriteDao
@@ -46,6 +48,9 @@ class FavoriteRepository(
                             )
                     )
                 }
+                .take(
+                    MAX_FAVORITES
+                )
                 .mapIndexed {
                         index,
                         app ->
@@ -147,6 +152,9 @@ class FavoriteRepository(
                                 )
                     )
                 }
+                .take(
+                    MAX_FAVORITES
+                )
         }
 
     /**
@@ -187,6 +195,9 @@ class FavoriteRepository(
                     )
                 ]
             }
+            .take(
+                MAX_FAVORITES
+            )
     }
 
     /**

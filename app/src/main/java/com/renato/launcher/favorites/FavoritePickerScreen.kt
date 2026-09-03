@@ -123,6 +123,9 @@ fun FavoritePickerScreen(
                 .apply {
                     addAll(
                         initialSelection
+                            .take(
+                                MAX_FAVORITES
+                            )
                     )
                 }
         }
@@ -1141,9 +1144,9 @@ private fun PickerHeader(
                         if (
                             selectedCount == 1
                         ) {
-                            "1 seleccionada"
+                            "1 de $MAX_FAVORITES seleccionada"
                         } else {
-                            "$selectedCount seleccionadas"
+                            "$selectedCount de $MAX_FAVORITES seleccionadas"
                         },
                     fontSize =
                         14.sp,
@@ -2176,6 +2179,13 @@ private fun toggleSelection(
             )
 
     } else {
+
+        if (
+            selectedApps.size >=
+            MAX_FAVORITES
+        ) {
+            return
+        }
 
         selectedApps
             .add(

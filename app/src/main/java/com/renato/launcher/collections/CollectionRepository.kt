@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
-const val MAX_COLLECTIONS = 4
+const val MAX_COLLECTIONS = 6
 
 class CollectionRepository(
     context: Context,

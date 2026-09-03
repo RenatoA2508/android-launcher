@@ -1187,16 +1187,16 @@ class MainActivity :
 
                                     LauncherMutationQueue
                                         .submit {
-                                            recentRepository
-                                                .recordLaunch(
-                                                    app
-                                                )
-
                                             if (
                                                 recordAsSearch
                                             ) {
                                                 recentRepository
                                                     .recordSearchLaunch(
+                                                        app
+                                                    )
+                                            } else {
+                                                recentRepository
+                                                    .recordLaunch(
                                                         app
                                                     )
                                             }

@@ -70,7 +70,7 @@ import com.renato.launcher.ui.components.LauncherSearchBar
 import com.renato.launcher.ui.components.LauncherAppIconWithBadge
 import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
-import com.renato.launcher.ui.interactions.launcherAppCombinedClickable
+import com.renato.launcher.ui.interactions.launcherTransitionCombinedClickable
 import com.renato.launcher.ui.interactions.launcherTransitionClickable
 
 @Composable
@@ -620,9 +620,15 @@ fun SearchScreen(
                                                 app
                                         ),
                                 onClick = {
+                                    /*
+                                     * Opening an app from the saved searched row
+                                     * is a second real use, so it graduates to
+                                     * generic Recents instead of being recorded
+                                     * as another typed-search launch.
+                                     */
                                     onAppClick(
                                         app,
-                                        true
+                                        false
                                     )
                                 },
                                 onAppInfo = {
@@ -981,7 +987,7 @@ private fun SearchAppItem(
                             Modifier
                         }
                     )
-                    .launcherAppCombinedClickable(
+                    .launcherTransitionCombinedClickable(
                         shape =
                             shape,
                         onClickLabel =
@@ -1001,9 +1007,19 @@ private fun SearchAppItem(
                             onClick
                     )
                     .padding(
-                        horizontal =
+                        start =
                             3.dp,
-                        vertical =
+                        end =
+                            3.dp,
+                        top =
+                            if (
+                                compact
+                            ) {
+                                8.dp
+                            } else {
+                                6.dp
+                            },
+                        bottom =
                             if (
                                 compact
                             ) {

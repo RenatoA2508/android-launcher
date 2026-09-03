@@ -34,7 +34,7 @@ class RecentRepository(
     suspend fun recordLaunch(
         app: InstalledApp
     ) {
-        recentDao.upsertRecentApp(
+        recentDao.recordRecentLaunch(
             RecentAppEntity(
                 componentName =
                     app.componentName
@@ -52,18 +52,41 @@ class RecentRepository(
     suspend fun recordSearchLaunch(
         app: InstalledApp
     ) {
-        recentDao.upsertRecentSearch(
-            RecentSearchEntity(
-                componentName =
-                    app.componentName
-                        .flattenToString(),
-                packageName =
-                    app.packageName,
-                userSerial =
-                    getUserSerial(app),
-                lastSearchedAt =
-                    System.currentTimeMillis()
+        val userSerial =
+            getUserSerial(
+                app
             )
+
+        val now =
+            System.currentTimeMillis()
+
+        recentDao.recordSearchLaunch(
+            recentApp =
+                RecentAppEntity(
+                    componentName =
+                        app.componentName
+                            .flattenToString(),
+                    packageName =
+                        app.packageName,
+                    userSerial =
+                        userSerial,
+                    lastOpenedAt =
+                        now
+                ),
+            recentSearch =
+                RecentSearchEntity(
+                    componentName =
+                        app.componentName
+                            .flattenToString(),
+                    packageName =
+                        app.packageName,
+                    userSerial =
+                        userSerial,
+                    lastSearchedAt =
+                        now
+                ),
+            recentLimit =
+                RECENT_SECTION_LIMIT
         )
     }
 
@@ -95,7 +118,7 @@ class RecentRepository(
             List<RecentSearchEntity>,
         installedApps:
             List<InstalledApp>,
-        recentLimit: Int = 4,
+        recentLimit: Int = RECENT_SECTION_LIMIT,
         searchedLimit: Int = 4
     ): RecentSections {
 
@@ -110,21 +133,65 @@ class RecentRepository(
                 )
             }
 
+        val savedRecentAppsByKey =
+            savedRecentApps.associateBy { recent ->
+                appKey(
+                    componentName =
+                        recent.componentName,
+                    userSerial =
+                        recent.userSerial
+                )
+            }
+
+        val savedRecentSearchesByKey =
+            savedRecentSearches.associateBy { recent ->
+                appKey(
+                    componentName =
+                        recent.componentName,
+                    userSerial =
+                        recent.userSerial
+                )
+            }
+
         /*
-         * First resolve Search-specific history.
+         * RC1 recorded a typed-search launch in both history tables. Keep those
+         * existing databases semantically correct during the RC1 -> RC2 update
+         * by using the newest source timestamp as the winner:
          *
-         * These applications get priority in the
-         * "Buscadas recientemente" section.
+         * - search at the same/newer instant -> "Buscadas recientemente"
+         * - a later generic use -> "Recientes"
+         *
+         * New RC2 writes also remove the losing search row when an app is
+         * promoted, but this timestamp rule makes the upgrade correct without a
+         * schema migration or destructive history rewrite.
          */
         val searchedApps =
             savedRecentSearches
-                .mapNotNull { recent ->
+                .filter { searched ->
+                    val key =
+                        appKey(
+                            componentName =
+                                searched.componentName,
+                            userSerial =
+                                searched.userSerial
+                        )
+
+                    val recent =
+                        savedRecentAppsByKey[
+                            key
+                        ]
+
+                    recent == null ||
+                        recent.lastOpenedAt <=
+                            searched.lastSearchedAt
+                }
+                .mapNotNull { searched ->
                     installedAppsByKey[
                         appKey(
                             componentName =
-                                recent.componentName,
+                                searched.componentName,
                             userSerial =
-                                recent.userSerial
+                                searched.userSerial
                         )
                     ]
                 }
@@ -141,29 +208,26 @@ class RecentRepository(
                     searchedLimit
                 )
 
-        val searchedKeys =
-            searchedApps
-                .map { app ->
-                    appKey(
-                        componentName =
-                            app.componentName
-                                .flattenToString(),
-                        userSerial =
-                            getUserSerial(app)
-                    )
-                }
-                .toSet()
-
-        /*
-         * The generic Recents section excludes
-         * applications already shown under
-         * "Buscadas recientemente".
-         *
-         * Therefore Search never shows the same
-         * application twice.
-         */
         val recentApps =
             savedRecentApps
+                .filter { recent ->
+                    val key =
+                        appKey(
+                            componentName =
+                                recent.componentName,
+                            userSerial =
+                                recent.userSerial
+                        )
+
+                    val searched =
+                        savedRecentSearchesByKey[
+                            key
+                        ]
+
+                    searched == null ||
+                        recent.lastOpenedAt >
+                            searched.lastSearchedAt
+                }
                 .mapNotNull { recent ->
                     installedAppsByKey[
                         appKey(
@@ -173,15 +237,6 @@ class RecentRepository(
                                 recent.userSerial
                         )
                     ]
-                }
-                .filterNot { app ->
-                    appKey(
-                        componentName =
-                            app.componentName
-                                .flattenToString(),
-                        userSerial =
-                            getUserSerial(app)
-                    ) in searchedKeys
                 }
                 .distinctBy { app ->
                     appKey(
@@ -202,6 +257,10 @@ class RecentRepository(
             searchedApps =
                 searchedApps
         )
+    }
+
+    private companion object {
+        const val RECENT_SECTION_LIMIT = 4
     }
 
     private fun getUserSerial(

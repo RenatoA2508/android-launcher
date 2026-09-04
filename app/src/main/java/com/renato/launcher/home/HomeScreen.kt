@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.renato.launcher.core.model.InstalledApp
 import com.renato.launcher.collections.MAX_COLLECTIONS
+import com.renato.launcher.favorites.MAX_FAVORITES
 import com.renato.launcher.data.database.collection.CollectionEntity
 import com.renato.launcher.notifications.NotificationBadgeStore
 import com.renato.launcher.ui.components.AppContextMenu
@@ -284,7 +285,10 @@ fun HomeScreen(
             } else {
                 FavoriteAppsGrid(
                     apps =
-                        favoriteApps,
+                        favoriteApps
+                            .take(
+                                MAX_FAVORITES
+                            ),
                     onAppClick =
                         onAppClick,
                     onAppInfo =

@@ -46,6 +46,104 @@ interface RecentDao {
 
     @Query(
         """
+        SELECT EXISTS(
+            SELECT 1
+            FROM (
+                SELECT componentName, userSerial
+                FROM recent_apps
+                ORDER BY lastOpenedAt DESC
+                LIMIT :recentLimit
+            ) AS visible_recent_apps
+            WHERE componentName = :componentName
+              AND userSerial = :userSerial
+        )
+        """
+    )
+    suspend fun isInVisibleRecentWindow(
+        componentName: String,
+        userSerial: Long,
+        recentLimit: Int
+    ): Boolean
+
+    @Query(
+        """
+        DELETE FROM recent_searches
+        WHERE componentName = :componentName
+          AND userSerial = :userSerial
+        """
+    )
+    suspend fun deleteRecentSearch(
+        componentName: String,
+        userSerial: Long
+    )
+
+    /**
+     * A normal app launch is stronger than search history.
+     *
+     * Promote the app to Recents and remove any stale "recently searched"
+     * entry in one Room transaction so Search never exposes the same app in
+     * both sections after a real subsequent use.
+     */
+    @Transaction
+    suspend fun recordRecentLaunch(
+        recentApp: RecentAppEntity
+    ) {
+        upsertRecentApp(
+            recentApp
+        )
+
+        deleteRecentSearch(
+            componentName =
+                recentApp.componentName,
+            userSerial =
+                recentApp.userSerial
+        )
+    }
+
+    /**
+     * A first launch directly from a typed search belongs to
+     * "Buscadas recientemente".
+     *
+     * If the app is still inside the currently visible Recents window, a typed
+     * search should not demote it: refresh Recents and keep search history
+     * absent. If it has already fallen out of that visible window, searching it
+     * again is a new search event and it belongs in "Buscadas recientemente".
+     */
+    @Transaction
+    suspend fun recordSearchLaunch(
+        recentApp: RecentAppEntity,
+        recentSearch: RecentSearchEntity,
+        recentLimit: Int
+    ) {
+        if (
+            isInVisibleRecentWindow(
+                componentName =
+                    recentApp.componentName,
+                userSerial =
+                    recentApp.userSerial,
+                recentLimit =
+                    recentLimit
+            )
+        ) {
+            upsertRecentApp(
+                recentApp
+            )
+
+            deleteRecentSearch(
+                componentName =
+                    recentApp.componentName,
+                userSerial =
+                    recentApp.userSerial
+            )
+        } else {
+            upsertRecentSearch(
+                recentSearch
+            )
+        }
+    }
+
+    @Query(
+        """
         DELETE FROM recent_apps
         WHERE packageName = :packageName
           AND userSerial = :userSerial

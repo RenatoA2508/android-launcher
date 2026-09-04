@@ -5,30 +5,24 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -37,26 +31,29 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,337 +61,128 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.renato.launcher.core.model.InstalledApp
+import com.renato.launcher.notifications.NotificationAppKey
+import com.renato.launcher.notifications.NotificationBadgeStore
 import com.renato.launcher.search.AppSearchEngine
+import com.renato.launcher.ui.components.LauncherAppCatalog
+import com.renato.launcher.ui.components.LauncherAppCatalogItem
+import com.renato.launcher.ui.components.LauncherAppIconWithBadge
+import com.renato.launcher.ui.components.LauncherDropdownMenu
+import com.renato.launcher.ui.components.LauncherMenuItem
 import com.renato.launcher.ui.components.LauncherPrimaryActionButton
-import com.renato.launcher.ui.components.LauncherSearchBar
 import com.renato.launcher.ui.components.LauncherTextActionButton
-import com.renato.launcher.ui.components.LauncherSearchLauncher
-import com.renato.launcher.ui.icons.PreloadLauncherAppIcons
 import com.renato.launcher.ui.icons.rememberLauncherAppIcon
 import com.renato.launcher.ui.interactions.launcherAppClickable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * RC2 collection editor.
+ *
+ * The selected section is a direct preview of the opened collection: title +
+ * four-column app grid. The lower browser is the same canonical All Apps
+ * catalog used everywhere else in the launcher.
+ */
 @Composable
 fun CollectionEditorScreen(
     apps: List<InstalledApp>,
+    appsLoaded: Boolean,
     initialName: String,
     initialSelection: List<InstalledApp>,
     isEditing: Boolean,
+    applyWindowEffect: Boolean = true,
     onCancel: () -> Unit,
-    onSave: (
-        String,
-        List<InstalledApp>
-    ) -> Unit
+    onSave: (String, List<InstalledApp>) -> Unit
 ) {
-    CollectionWindowEffect()
+    if (applyWindowEffect) {
+        CollectionWindowEffect()
+    }
+    BackHandler(onBack = onCancel)
 
-    PreloadLauncherAppIcons(
-        apps =
-            apps
-    )
-
-    val searchEngine =
-        remember(
-            apps
-        ) {
-            AppSearchEngine(
-                apps =
-                    apps
-            )
-        }
+    val notificationCounts by NotificationBadgeStore.counts.collectAsState()
 
     var collectionName by
-        remember(
-            initialName
-        ) {
-            mutableStateOf(
-                initialName
-            )
+        remember(initialName) {
+            mutableStateOf(initialName)
         }
 
     val selectedApps =
-        remember(
-            initialSelection
-        ) {
-            mutableStateListOf<InstalledApp>()
-                .apply {
-                    addAll(
-                        initialSelection
-                    )
-                }
+        remember(initialSelection) {
+            mutableStateListOf<InstalledApp>().apply {
+                addAll(initialSelection)
+            }
         }
 
-    var searchMode by
-        remember {
-            mutableStateOf(
-                false
-            )
+    val selectedSnapshot = selectedApps.toList()
+    val selectedKeys =
+        remember(selectedSnapshot) {
+            selectedSnapshot.map(::appKey).toSet()
         }
 
-    var searchQuery by
-        remember {
-            mutableStateOf(
-                ""
-            )
+    val searchEngine =
+        remember(apps) {
+            AppSearchEngine(apps = apps)
         }
 
-    var searchExitPending by
-        remember {
-            mutableStateOf(
-                false
-            )
+    var searchQuery by remember { mutableStateOf("") }
+    val displayedApps =
+        remember(searchEngine, searchQuery, apps) {
+            if (searchQuery.isBlank()) apps else searchEngine.search(searchQuery)
         }
 
-    val normalGridState =
-        rememberLazyGridState()
+    val itemBoundsByKey = remember { mutableStateMapOf<String, Rect>() }
+    var draggedKey by remember { mutableStateOf<String?>(null) }
+    var dropTargetKey by remember { mutableStateOf<String?>(null) }
+    var dragTranslation by remember { mutableStateOf(Offset.Zero) }
+    var dragPointerInRoot by remember { mutableStateOf(Offset.Zero) }
 
-    val searchGridState =
-        rememberLazyGridState()
-
-    /*
-     * Drag state belongs only to the selected-app section.
-     * Changes remain local until the user presses Listo, so Cancelar
-     * still discards every reorder made during this edit session.
-     */
-    var draggedSelectedAppKey by
-        remember {
-            mutableStateOf<String?>(
-                null
-            )
-        }
-
-    var dropTargetSelectedAppKey by
-        remember {
-            mutableStateOf<String?>(
-                null
-            )
-        }
-
-    var draggedTranslation by
-        remember {
-            mutableStateOf(
-                Offset.Zero
-            )
-        }
-
-    var dragPointerInGrid by
-        remember {
-            mutableStateOf(
-                Offset.Zero
-            )
-        }
-
-    var swapAnimationSequence by
-        remember {
-            mutableStateOf(
-                0L
-            )
-        }
-
+    var swapAnimationSequence by remember { mutableLongStateOf(0L) }
     var swapAnimationRequest by
         remember {
-            mutableStateOf<SwapAnimationRequest?>(
-                null
-            )
+            mutableStateOf<CollectionPreviewSwapAnimationRequest?>(null)
         }
 
-    fun requestSettleAnimation(
-        offsets: Map<String, Offset>
-    ) {
-        if (
-            offsets.isEmpty()
-        ) {
-            return
-        }
+    fun clearDrag() {
+        draggedKey = null
+        dropTargetKey = null
+        dragTranslation = Offset.Zero
+        dragPointerInRoot = Offset.Zero
+    }
 
-        swapAnimationSequence +=
-            1L
-
+    fun requestSettleAnimation(offsets: Map<String, Offset>) {
+        if (offsets.isEmpty()) return
+        swapAnimationSequence += 1L
         swapAnimationRequest =
-            SwapAnimationRequest(
-                id =
-                    swapAnimationSequence,
-                offsets =
-                    offsets
+            CollectionPreviewSwapAnimationRequest(
+                id = swapAnimationSequence,
+                offsets = offsets
             )
     }
 
-    val hapticFeedback =
-        LocalHapticFeedback.current
-
-    val focusRequester =
-        remember {
-            FocusRequester()
-        }
-
-    val focusManager =
-        LocalFocusManager.current
-
-    val keyboardController =
-        LocalSoftwareKeyboardController.current
-
-    val coroutineScope =
-        rememberCoroutineScope()
-
-    val selectedSnapshot =
-        selectedApps.toList()
-
-    val selectionPositions =
-        remember(
-            selectedSnapshot
-        ) {
-            selectedSnapshot
-                .mapIndexed {
-                        index,
-                        app ->
-
-                    appKey(
-                        app
-                    ) to
-                        (index + 1)
-                }
-                .toMap()
-        }
-
-    val filteredApps =
-        remember(
-            searchEngine,
-            searchQuery
-        ) {
-            if (
-                searchQuery.isBlank()
-            ) {
-                apps
-            } else {
-                searchEngine.search(
-                    query =
-                        searchQuery
-                )
+    fun toggleSelection(app: InstalledApp) {
+        val existingIndex =
+            selectedApps.indexOfFirst { selected ->
+                isSameApp(selected, app)
             }
+
+        if (existingIndex >= 0) {
+            selectedApps.removeAt(existingIndex)
+        } else {
+            selectedApps.add(app)
         }
+    }
 
     val canSave =
-        collectionName
-            .isNotBlank() &&
-            selectedApps
-                .isNotEmpty()
-
-    fun clearSelectedDrag() {
-        draggedSelectedAppKey =
-            null
-
-        dropTargetSelectedAppKey =
-            null
-
-        draggedTranslation =
-            Offset.Zero
-
-        dragPointerInGrid =
-            Offset.Zero
-    }
-
-    fun exitSearch() {
-        if (
-            searchExitPending
-        ) {
-            return
-        }
-
-        searchExitPending =
-            true
-
-        keyboardController
-            ?.hide()
-
-        focusManager
-            .clearFocus()
-
-        coroutineScope
-            .launch {
-                delay(
-                    100
-                )
-
-                searchMode =
-                    false
-
-                searchQuery =
-                    ""
-
-                searchExitPending =
-                    false
-            }
-    }
-
-    BackHandler {
-        if (
-            searchMode
-        ) {
-            exitSearch()
-        } else {
-            onCancel()
-        }
-    }
-
-    LaunchedEffect(
-        searchMode
-    ) {
-        if (
-            searchMode
-        ) {
-            clearSelectedDrag()
-
-            withFrameNanos { }
-
-            focusRequester
-                .requestFocus()
-
-            withFrameNanos { }
-
-            keyboardController
-                ?.show()
-        }
-    }
-
-    LaunchedEffect(
-        searchQuery
-    ) {
-        if (
-            searchMode &&
-            (
-                searchGridState
-                    .firstVisibleItemIndex > 0 ||
-                searchGridState
-                    .firstVisibleItemScrollOffset > 0
-            )
-        ) {
-            searchGridState
-                .scrollToItem(
-                    0
-                )
-        }
-    }
+        collectionName.isNotBlank() && selectedApps.isNotEmpty()
 
     Box(
         modifier =
-            Modifier.fillMaxSize()
+            Modifier
+                .fillMaxSize()
+                .background(
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
+                )
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        MaterialTheme
-                            .colorScheme
-                            .surface
-                            .copy(
-                                alpha =
-                                    0.78f
-                            )
-                    )
-        )
-
         Column(
             modifier =
                 Modifier
@@ -402,603 +190,213 @@ fun CollectionEditorScreen(
                     .statusBarsPadding()
                     .navigationBarsPadding()
         ) {
-            if (
-                searchMode
-            ) {
-                LauncherSearchBar(
-                    query =
-                        searchQuery,
-                    onQueryChange = {
-                        searchQuery =
-                            it
-                    },
-                    focusRequester =
-                        focusRequester,
-                    onBack = {
-                        exitSearch()
-                    },
-                    onClear = {
-                        searchQuery =
-                            ""
-                    },
-                    onSubmit = {
-                    }
-                )
-            } else {
-                CollectionEditorHeader(
-                    isEditing =
-                        isEditing,
-                    selectedCount =
-                        selectedApps.size,
-                    canSave =
-                        canSave,
-                    onCancel =
-                        onCancel,
-                    onSave = {
-                        onSave(
-                            collectionName.trim(),
-                            selectedApps.toList()
-                        )
-                    }
-                )
+            CollectionEditorHeader(
+                title = if (isEditing) "Editar colección" else "Nueva colección",
+                canSave = canSave,
+                onBack = onCancel,
+                onSave = {
+                    onSave(
+                        collectionName.trim(),
+                        selectedApps.toList()
+                    )
+                }
+            )
 
-                CollectionNameField(
-                    name =
-                        collectionName,
-                    onNameChange = {
-                        collectionName =
-                            it
-                    }
-                )
-            }
-
-            LazyVerticalGrid(
-                columns =
-                    GridCells.Fixed(
-                        4
-                    ),
-                state =
-                    if (
-                        searchMode
-                    ) {
-                        searchGridState
-                    } else {
-                        normalGridState
-                    },
+            LauncherAppCatalog(
+                apps = displayedApps,
+                appsLoaded = appsLoaded,
                 modifier =
                     Modifier
-                        .weight(
-                            1f
-                        )
+                        .weight(1f)
                         .fillMaxWidth()
                         .imePadding(),
-                contentPadding =
-                    PaddingValues(
-                        start =
-                            20.dp,
-                        end =
-                            20.dp,
-                        top =
-                            10.dp,
-                        bottom =
-                            28.dp
-                    ),
-                horizontalArrangement =
-                    Arrangement.spacedBy(
-                        8.dp
-                    ),
-                verticalArrangement =
-                    Arrangement.spacedBy(
-                        8.dp
-                    ),
-                userScrollEnabled =
-                    draggedSelectedAppKey ==
+                userScrollEnabled = draggedKey == null,
+                emptyStateText =
+                    if (searchQuery.isNotBlank()) {
+                        "No encontramos ninguna aplicación con ese nombre."
+                    } else {
                         null
-            ) {
-                if (
-                    !searchMode
-                ) {
-                    item(
-                        key =
-                            "selected-heading",
-                        contentType =
-                            "section",
-                        span = {
-                            GridItemSpan(
-                                maxLineSpan
+                    },
+                headerContent = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        CollectionNameField(
+                            value = collectionName,
+                            onValueChange = { collectionName = it }
+                        )
+
+                        Spacer(Modifier.height(18.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Vista previa de la colección",
+                                modifier = Modifier.weight(1f),
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            Text(
+                                text = "${selectedSnapshot.size}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    ) {
-                        SelectedAppsHeading()
-                    }
 
-                    if (
-                        selectedSnapshot
-                            .isEmpty()
-                    ) {
-                        item(
-                            key =
-                                "selected-empty",
-                            contentType =
-                                "section",
-                            span = {
-                                GridItemSpan(
-                                    maxLineSpan
-                                )
-                            }
-                        ) {
-                            EmptySelectionState()
-                        }
-                    } else {
-                        items(
-                            items =
-                                selectedSnapshot,
-                            key = {
-                                    app ->
+                        Spacer(Modifier.height(10.dp))
 
-                                selectedGridKey(
-                                    app
-                                )
+                        CollectionInsidePreview(
+                            collectionName = collectionName,
+                            selectedApps = selectedSnapshot,
+                            notificationCounts = notificationCounts,
+                            itemBoundsByKey = itemBoundsByKey,
+                            draggedKey = draggedKey,
+                            dropTargetKey = dropTargetKey,
+                            dragTranslation = dragTranslation,
+                            swapAnimationRequest = swapAnimationRequest,
+                            onRemove = { app ->
+                                removeSelectedApp(selectedApps, app)
                             },
-                            contentType = {
-                                "selected-app"
-                            }
-                        ) {
-                                app ->
+                            onDragStart = { app, touchOffset ->
+                                val key = appKey(app)
+                                val bounds = itemBoundsByKey[key]
 
-                            val key =
-                                appKey(
-                                    app
-                                )
+                                if (bounds != null) {
+                                    draggedKey = key
+                                    dropTargetKey = null
+                                    dragTranslation = Offset.Zero
+                                    dragPointerInRoot =
+                                        Offset(
+                                            x = bounds.left + touchOffset.x,
+                                            y = bounds.top + touchOffset.y
+                                        )
+                                }
+                            },
+                            onDrag = { dragAmount ->
+                                val sourceKey = draggedKey
+                                if (sourceKey != null) {
+                                    dragTranslation += dragAmount
+                                    dragPointerInRoot += dragAmount
+                                    dropTargetKey =
+                                        findCollectionPreviewDropTarget(
+                                            itemBoundsByKey = itemBoundsByKey,
+                                            draggedAppKey = sourceKey,
+                                            pointer = dragPointerInRoot
+                                        )
+                                }
+                            },
+                            onDragEnd = {
+                                val sourceKey = draggedKey
+                                val targetKey = dropTargetKey
 
-                            val gridKey =
-                                selectedGridKey(
-                                    app
-                                )
-
-                            val isDragging =
-                                draggedSelectedAppKey ==
-                                    key
-
-                            val isDropTarget =
-                                dropTargetSelectedAppKey ==
-                                    key
-
-                            val settleRequest =
-                                swapAnimationRequest
-
-                            val settleOffset =
-                                settleRequest
-                                    ?.offsets
-                                    ?.get(
-                                        key
-                                    )
-                                    ?: Offset.Zero
-
-                            val settleAnimationToken =
                                 if (
-                                    settleRequest
-                                        ?.offsets
-                                        ?.containsKey(
-                                            key
-                                        ) == true
+                                    sourceKey != null &&
+                                    targetKey != null &&
+                                    sourceKey != targetKey
                                 ) {
-                                    settleRequest.id
-                                } else {
-                                    null
-                                }
+                                    val sourceBounds = itemBoundsByKey[sourceKey]
+                                    val targetBounds = itemBoundsByKey[targetKey]
 
-                            SelectedCollectionAppItem(
-                                app =
-                                    app,
-                                position =
-                                    selectionPositions[
-                                        key
-                                    ] ?: 0,
-                                isDragging =
-                                    isDragging,
-                                isDropTarget =
-                                    isDropTarget,
-                                dragTranslation =
-                                    if (
-                                        isDragging
-                                    ) {
-                                        draggedTranslation
-                                    } else {
-                                        Offset.Zero
-                                    },
-                                settleOffset =
-                                    settleOffset,
-                                settleAnimationToken =
-                                    settleAnimationToken,
-                                onDragStart = {
-                                        touchOffset ->
-
-                                    val itemInfo =
-                                        normalGridState
-                                            .layoutInfo
-                                            .visibleItemsInfo
-                                            .firstOrNull {
-                                                    item ->
-
-                                                item.key ==
-                                                    gridKey
-                                            }
-
-                                    if (
-                                        itemInfo != null
-                                    ) {
-                                        draggedSelectedAppKey =
-                                            key
-
-                                        dropTargetSelectedAppKey =
-                                            null
-
-                                        draggedTranslation =
-                                            Offset.Zero
-
-                                        dragPointerInGrid =
-                                            Offset(
-                                                x =
-                                                    itemInfo.offset.x
-                                                        .toFloat() +
-                                                        touchOffset.x,
-                                                y =
-                                                    itemInfo.offset.y
-                                                        .toFloat() +
-                                                        touchOffset.y
-                                            )
-
-                                        hapticFeedback
-                                            .performHapticFeedback(
-                                                HapticFeedbackType.LongPress
-                                            )
-                                    }
-                                },
-                                onDrag = {
-                                        dragAmount ->
-
-                                    if (
-                                        draggedSelectedAppKey ==
-                                            key
-                                    ) {
-                                        draggedTranslation +=
-                                            dragAmount
-
-                                        dragPointerInGrid +=
-                                            dragAmount
-
-                                        dropTargetSelectedAppKey =
-                                            findSelectedDropTarget(
-                                                gridState =
-                                                    normalGridState,
-                                                draggedAppKey =
-                                                    key,
-                                                pointer =
-                                                    dragPointerInGrid
-                                            )
-                                    }
-                                },
-                                onDragEnd = {
-                                    val sourceKey =
-                                        draggedSelectedAppKey
-
-                                    val targetKey =
-                                        dropTargetSelectedAppKey
-
-                                    if (
-                                        sourceKey != null &&
-                                        targetKey != null &&
-                                        sourceKey !=
-                                            targetKey
-                                    ) {
-                                        val sourceGridKey =
-                                            COLLECTION_SELECTED_GRID_KEY_PREFIX +
-                                                sourceKey
-
-                                        val targetGridKey =
-                                            COLLECTION_SELECTED_GRID_KEY_PREFIX +
-                                                targetKey
-
-                                        val sourceItemInfo =
-                                            normalGridState
-                                                .layoutInfo
-                                                .visibleItemsInfo
-                                                .firstOrNull {
-                                                        item ->
-
-                                                    item.key ==
-                                                        sourceGridKey
-                                                }
-
-                                        val targetItemInfo =
-                                            normalGridState
-                                                .layoutInfo
-                                                .visibleItemsInfo
-                                                .firstOrNull {
-                                                        item ->
-
-                                                    item.key ==
-                                                        targetGridKey
-                                                }
-
-                                        if (
-                                            sourceItemInfo != null &&
-                                            targetItemInfo != null
-                                        ) {
-                                            val sourceOldPosition =
-                                                Offset(
-                                                    sourceItemInfo
-                                                        .offset
-                                                        .x
-                                                        .toFloat(),
-                                                    sourceItemInfo
-                                                        .offset
-                                                        .y
-                                                        .toFloat()
-                                                )
-
-                                            val targetOldPosition =
-                                                Offset(
-                                                    targetItemInfo
-                                                        .offset
-                                                        .x
-                                                        .toFloat(),
-                                                    targetItemInfo
-                                                        .offset
-                                                        .y
-                                                        .toFloat()
-                                                )
-
-                                            requestSettleAnimation(
-                                                mapOf(
-                                                    sourceKey to
-                                                        (
-                                                            sourceOldPosition +
-                                                                draggedTranslation -
-                                                                targetOldPosition
-                                                        ),
-                                                    targetKey to
-                                                        (
-                                                            targetOldPosition -
-                                                                sourceOldPosition
-                                                        )
-                                                )
-                                            )
-                                        }
-
-                                        swapSelectedApps(
-                                            selectedApps =
-                                                selectedApps,
-                                            sourceAppKey =
-                                                sourceKey,
-                                            targetAppKey =
-                                                targetKey
-                                        )
-                                    } else if (
-                                        sourceKey != null &&
-                                        draggedTranslation !=
-                                            Offset.Zero
-                                    ) {
+                                    if (sourceBounds != null && targetBounds != null) {
+                                        val sourceOld = Offset(sourceBounds.left, sourceBounds.top)
+                                        val targetOld = Offset(targetBounds.left, targetBounds.top)
                                         requestSettleAnimation(
                                             mapOf(
                                                 sourceKey to
-                                                    draggedTranslation
+                                                    (sourceOld + dragTranslation - targetOld),
+                                                targetKey to
+                                                    (targetOld - sourceOld)
                                             )
                                         )
                                     }
 
-                                    clearSelectedDrag()
-                                },
-                                onDragCancel = {
-                                    val sourceKey =
-                                        draggedSelectedAppKey
-
-                                    if (
-                                        sourceKey != null &&
-                                        draggedTranslation !=
-                                            Offset.Zero
-                                    ) {
-                                        requestSettleAnimation(
-                                            mapOf(
-                                                sourceKey to
-                                                    draggedTranslation
-                                            )
-                                        )
-                                    }
-
-                                    clearSelectedDrag()
-                                },
-                                onRemove = {
-                                    removeSelectedApp(
-                                        selectedApps =
-                                            selectedApps,
-                                        app =
-                                            app
+                                    swapSelectedApps(
+                                        selectedApps = selectedApps,
+                                        sourceAppKey = sourceKey,
+                                        targetAppKey = targetKey
+                                    )
+                                } else if (
+                                    sourceKey != null &&
+                                    dragTranslation != Offset.Zero
+                                ) {
+                                    requestSettleAnimation(
+                                        mapOf(sourceKey to dragTranslation)
                                     )
                                 }
-                            )
-                        }
-                    }
 
-                    item(
-                        key =
-                            "search-launcher",
-                        contentType =
-                            "section",
-                        span = {
-                            GridItemSpan(
-                                maxLineSpan
-                            )
-                        }
-                    ) {
-                        LauncherSearchLauncher(
-                            onClick = {
-                                searchMode =
-                                    true
+                                clearDrag()
+                            },
+                            onDragCancel = {
+                                val sourceKey = draggedKey
+                                if (
+                                    sourceKey != null &&
+                                    dragTranslation != Offset.Zero
+                                ) {
+                                    requestSettleAnimation(
+                                        mapOf(sourceKey to dragTranslation)
+                                    )
+                                }
+                                clearDrag()
                             }
                         )
-                    }
 
-                    item(
-                        key =
-                            "all-apps-heading",
-                        contentType =
-                            "section",
-                        span = {
-                            GridItemSpan(
-                                maxLineSpan
-                            )
-                        }
-                    ) {
+                        Spacer(Modifier.height(18.dp))
+
                         Text(
-                            text =
-                                "Todas las aplicaciones",
-                            modifier =
-                                Modifier.padding(
-                                    top =
-                                        6.dp
-                                ),
-                            fontSize =
-                                17.sp,
-                            fontWeight =
-                                FontWeight.SemiBold,
-                            color =
-                                MaterialTheme
-                                    .colorScheme
-                                    .onSurface
+                            text = "Añadir aplicaciones",
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
+
+                        Spacer(Modifier.height(8.dp))
+
+                        CollectionCatalogSearchField(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it }
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Text(
+                            text = "${selectedSnapshot.size} aplicaciones en la colección",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(Modifier.height(4.dp))
                     }
                 }
+            ) { app ->
+                val isSelected = appKey(app) in selectedKeys
 
-                if (
-                    searchMode &&
-                    searchQuery.isNotBlank() &&
-                    filteredApps.isNotEmpty()
+                Box(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    item(
-                        key =
-                            "search-heading",
-                        contentType =
-                            "section",
-                        span = {
-                            GridItemSpan(
-                                maxLineSpan
-                            )
+                    LauncherAppCatalogItem(
+                        app = app,
+                        notificationCount = 0,
+                        onClickLabel =
+                            if (isSelected) {
+                                "Quitar ${app.label} de la colección"
+                            } else {
+                                "Añadir ${app.label} a la colección"
+                            },
+                        onClick = {
+                            toggleSelection(app)
                         }
-                    ) {
-                        Text(
-                            text =
-                                "Resultados",
-                            fontSize =
-                                17.sp,
-                            fontWeight =
-                                FontWeight.SemiBold,
-                            color =
-                                MaterialTheme
-                                    .colorScheme
-                                    .onSurface
-                        )
-                    }
-                }
+                    )
 
-                val displayedApps =
-                    if (
-                        searchMode
-                    ) {
-                        filteredApps
-                    } else {
-                        apps
-                    }
-
-                if (
-                    searchMode &&
-                    searchQuery.isNotBlank() &&
-                    displayedApps.isEmpty()
-                ) {
-                    item(
-                        key =
-                            "empty-search",
-                        contentType =
-                            "section",
-                        span = {
-                            GridItemSpan(
-                                maxLineSpan
-                            )
-                        }
-                    ) {
-                        Text(
-                            text =
-                                "No encontramos ninguna aplicación con ese nombre.",
+                    if (isSelected) {
+                        CollectionSelectedCatalogMarker(
                             modifier =
                                 Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        vertical =
-                                            28.dp
-                                    ),
-                            textAlign =
-                                TextAlign.Center,
-                            fontSize =
-                                14.sp,
-                            color =
-                                MaterialTheme
-                                    .colorScheme
-                                    .onSurfaceVariant
-                        )
-                    }
-                } else {
-                    items(
-                        items =
-                            displayedApps,
-                        key = {
-                                app ->
-
-                            if (
-                                searchMode
-                            ) {
-                                "search:" +
-                                    appKey(
-                                        app
-                                    )
-                            } else {
-                                "all:" +
-                                    appKey(
-                                        app
-                                    )
-                            }
-                        },
-                        contentType = {
-                            "app"
-                        }
-                    ) {
-                            app ->
-
-                        val key =
-                            appKey(
-                                app
-                            )
-
-                        CollectionAppItem(
-                            app =
-                                app,
-                            selectionPosition =
-                                selectionPositions[
-                                    key
-                                ],
-                            selected =
-                                selectionPositions
-                                    .containsKey(
-                                        key
-                                    ),
-                            onToggle = {
-                                toggleSelection(
-                                    selectedApps =
-                                        selectedApps,
-                                    app =
-                                        app
-                                )
-                            }
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 3.dp, end = 4.dp)
                         )
                     }
                 }
@@ -1009,971 +407,533 @@ fun CollectionEditorScreen(
 
 @Composable
 private fun CollectionEditorHeader(
-    isEditing: Boolean,
-    selectedCount: Int,
+    title: String,
     canSave: Boolean,
-    onCancel: () -> Unit,
+    onBack: () -> Unit,
     onSave: () -> Unit
 ) {
-    Surface(
+    Row(
         modifier =
-            Modifier.fillMaxWidth(),
-        color =
-            Color.Transparent
-    ) {
-        Row(
-            modifier =
-                Modifier.padding(
-                    start =
-                        20.dp,
-                    end =
-                        20.dp,
-                    top =
-                        14.dp,
-                    bottom =
-                        8.dp
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 8.dp,
+                    end = 14.dp,
+                    top = 6.dp,
+                    bottom = 8.dp
                 ),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-            Column(
-                modifier =
-                    Modifier.weight(
-                        1f
-                    )
-            ) {
-                Text(
-                    text =
-                        if (
-                            isEditing
-                        ) {
-                            "Editar colección"
-                        } else {
-                            "Nueva colección"
-                        },
-                    fontSize =
-                        27.sp,
-                    fontWeight =
-                        FontWeight.SemiBold,
-                    color =
-                        MaterialTheme
-                            .colorScheme
-                            .onSurface
-                )
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LauncherTextActionButton(
+            text = "‹",
+            fontSize = 32.sp,
+            onClick = onBack
+        )
 
-                Text(
-                    text =
-                        if (
-                            selectedCount == 1
-                        ) {
-                            "1 seleccionada"
-                        } else {
-                            "$selectedCount seleccionadas"
-                        },
-                    fontSize =
-                        14.sp,
-                    color =
-                        MaterialTheme
-                            .colorScheme
-                            .onSurfaceVariant
-                )
+        Text(
+            text = title,
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(start = 2.dp),
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        LauncherPrimaryActionButton(
+            text = "Listo",
+            enabled = canSave,
+            onClick = onSave
+        )
+    }
+}
+
+@Composable
+private fun CollectionNameField(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { newValue ->
+            if (newValue.length <= 40) {
+                onValueChange(newValue)
             }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        label = {
+            Text("Nombre de la colección")
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(24.dp)
+    )
+}
 
-            CollectionEditorTextActionButton(
-                text =
-                    "Cancelar",
-                onClick =
-                    onCancel
-            )
+@Composable
+private fun CollectionInsidePreview(
+    collectionName: String,
+    selectedApps: List<InstalledApp>,
+    notificationCounts: Map<NotificationAppKey, Int>,
+    itemBoundsByKey: MutableMap<String, Rect>,
+    draggedKey: String?,
+    dropTargetKey: String?,
+    dragTranslation: Offset,
+    swapAnimationRequest: CollectionPreviewSwapAnimationRequest?,
+    onRemove: (InstalledApp) -> Unit,
+    onDragStart: (InstalledApp, Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit
+) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.46f)
+                )
+                .padding(horizontal = 12.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text =
+                collectionName.ifBlank {
+                    "Nombre de la colección"
+                },
+            fontSize = 26.sp,
+            fontWeight = FontWeight.SemiBold,
+            color =
+                if (collectionName.isBlank()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
 
-            Spacer(
+        Spacer(Modifier.height(10.dp))
+
+        if (selectedApps.isEmpty()) {
+            Text(
+                text = "Añade aplicaciones para ver cómo quedarán dentro de la colección.",
                 modifier =
-                    Modifier.width(
-                        2.dp
-                    )
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 22.dp),
+                textAlign = TextAlign.Center,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        } else {
+            selectedApps.chunked(4).forEach { rowApps ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    rowApps.forEach { app ->
+                        val key = appKey(app)
+                        val isDragging = draggedKey == key
+                        val settleRequest = swapAnimationRequest
+                        val settleOffset = settleRequest?.offsets?.get(key) ?: Offset.Zero
+                        val settleToken =
+                            if (settleRequest?.offsets?.containsKey(key) == true) {
+                                settleRequest.id
+                            } else {
+                                null
+                            }
 
-            CollectionEditorPrimaryActionButton(
-                text =
-                    "Listo",
-                enabled =
-                    canSave,
-                onClick =
-                    onSave
-            )
+                        CollectionInsidePreviewAppItem(
+                            app = app,
+                            notificationCount =
+                                NotificationBadgeStore.countFor(
+                                    notificationCounts,
+                                    app
+                                ),
+                            isGestureActive = isDragging,
+                            isDragging = isDragging,
+                            isDropTarget = dropTargetKey == key,
+                            dragTranslation =
+                                if (isDragging) dragTranslation else Offset.Zero,
+                            settleOffset = settleOffset,
+                            settleAnimationToken = settleToken,
+                            onBoundsChanged = { bounds ->
+                                itemBoundsByKey[key] = bounds
+                            },
+                            onRemove = {
+                                onRemove(app)
+                            },
+                            onDragStart = { offset ->
+                                onDragStart(app, offset)
+                            },
+                            onDrag = onDrag,
+                            onDragEnd = onDragEnd,
+                            onDragCancel = onDragCancel,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    repeat(4 - rowApps.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun CollectionEditorTextActionButton(
-    text: String,
-    onClick: () -> Unit
-) {
-    LauncherTextActionButton(
-        text =
-            text,
-        onClick =
-            onClick
-    )
-}
-
-@Composable
-private fun CollectionEditorPrimaryActionButton(
-    text: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    LauncherPrimaryActionButton(
-        text =
-            text,
-        enabled =
-            enabled,
-        onClick =
-            onClick
-    )
-}
-
-@Composable
-private fun CollectionNameField(
-    name: String,
-    onNameChange: (String) -> Unit
-) {
-    Surface(
-        modifier =
-            Modifier.fillMaxWidth(),
-        color =
-            Color.Transparent
-    ) {
-        OutlinedTextField(
-            value =
-                name,
-            onValueChange =
-                onNameChange,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start =
-                            20.dp,
-                        end =
-                            20.dp,
-                        bottom =
-                            12.dp
-                    ),
-            label = {
-                Text(
-                    text =
-                        "Nombre"
-                )
-            },
-            placeholder = {
-                Text(
-                    text =
-                        "Ej. Universidad"
-                )
-            },
-            singleLine =
-                true,
-            shape =
-                RoundedCornerShape(
-                    24.dp
-                )
-        )
-    }
-}
-
-@Composable
-private fun SelectedAppsHeading() {
-    Column(
-        modifier =
-            Modifier.padding(
-                top =
-                    6.dp
-            )
-    ) {
-        Text(
-            text =
-                "Seleccionadas",
-            fontSize =
-                17.sp,
-            fontWeight =
-                FontWeight.SemiBold,
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onSurface
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    2.dp
-                )
-        )
-
-        Text(
-            text =
-                "Toca una aplicación para quitarla. " +
-                    "Mantén pulsado y arrastra para intercambiar su posición. " +
-                    "El número indica su posición dentro de la colección.",
-            fontSize =
-                13.sp,
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun EmptySelectionState() {
-    Surface(
-        modifier =
-            Modifier.fillMaxWidth(),
-        shape =
-            RoundedCornerShape(
-                24.dp
-            ),
-        color =
-            MaterialTheme
-                .colorScheme
-                .surfaceContainer
-                .copy(
-                    alpha =
-                        0.78f
-                )
-    ) {
-        Text(
-            text =
-                "Elige al menos una aplicación para esta colección.",
-            modifier =
-                Modifier.padding(
-                    horizontal =
-                        24.dp,
-                    vertical =
-                        18.dp
-                ),
-            textAlign =
-                TextAlign.Center,
-            fontSize =
-                14.sp,
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun SelectedCollectionAppItem(
+private fun CollectionInsidePreviewAppItem(
     app: InstalledApp,
-    position: Int,
+    notificationCount: Int,
+    isGestureActive: Boolean,
     isDragging: Boolean,
     isDropTarget: Boolean,
     dragTranslation: Offset,
     settleOffset: Offset,
     settleAnimationToken: Long?,
+    onBoundsChanged: (Rect) -> Unit,
+    onRemove: () -> Unit,
     onDragStart: (Offset) -> Unit,
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onDragCancel: () -> Unit,
-    onRemove: () -> Unit
+    modifier: Modifier = Modifier
 ) {
-    val iconBitmap =
-        rememberLauncherAppIcon(
-            app
-        )
-
-    val tileShape =
-        RoundedCornerShape(
-            20.dp
-        )
-
-    val density =
-        LocalDensity.current
-
-    val dragElevationPx =
-        remember(
-            density
-        ) {
-            with(
-                density
-            ) {
-                12.dp.toPx()
-            }
-        }
+    val iconBitmap = rememberLauncherAppIcon(app)
+    val hapticFeedback = LocalHapticFeedback.current
+    val gestureScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val dragStartThresholdPx = remember(density) { with(density) { 6.dp.toPx() } }
+    val dragElevationPx = remember(density) { with(density) { 12.dp.toPx() } }
 
     val settleProgress =
-        remember(
-            settleAnimationToken
-        ) {
-            Animatable(
-                if (
-                    settleAnimationToken != null
-                ) {
-                    1f
-                } else {
-                    0f
-                }
-            )
+        remember(settleAnimationToken) {
+            Animatable(if (settleAnimationToken != null) 1f else 0f)
         }
 
-    LaunchedEffect(
-        settleAnimationToken
-    ) {
-        if (
-            settleAnimationToken != null
-        ) {
+    LaunchedEffect(settleAnimationToken) {
+        if (settleAnimationToken != null) {
             settleProgress.animateTo(
-                targetValue =
-                    0f,
-                animationSpec =
-                    spring(
-                        dampingRatio =
-                            0.86f,
-                        stiffness =
-                            700f
-                    )
+                targetValue = 0f,
+                animationSpec = spring(dampingRatio = 0.86f, stiffness = 700f)
             )
         }
     }
 
     val dragLiftProgress by
         animateFloatAsState(
-            targetValue =
-                if (
-                    isDragging
-                ) {
-                    1f
-                } else {
-                    0f
-                },
-            animationSpec =
-                tween(
-                    durationMillis =
-                        110
-                ),
-            label =
-                "collectionDragLift"
+            targetValue = if (isDragging) 1f else 0f,
+            animationSpec = tween(110),
+            label = "collectionEditorPreviewDragLift"
         )
 
     val dropTargetProgress by
         animateFloatAsState(
-            targetValue =
-                if (
-                    isDropTarget
-                ) {
-                    1f
-                } else {
-                    0f
-                },
-            animationSpec =
-                tween(
-                    durationMillis =
-                        100
-                ),
-            label =
-                "collectionDropTarget"
+            targetValue = if (isDropTarget) 1f else 0f,
+            animationSpec = tween(100),
+            label = "collectionEditorPreviewDropTarget"
         )
 
-    val isSettling =
-        settleAnimationToken != null &&
-            settleProgress.value >
-                0.001f
+    val shape = RoundedCornerShape(18.dp)
+    val animatedSettleTranslation = settleOffset * settleProgress.value
+    var menuExpanded by remember(app.componentName, app.user) { mutableStateOf(false) }
 
-    val animatedSettleTranslation =
-        settleOffset *
-            settleProgress.value
-
-    val dropTargetBorder =
-        MaterialTheme
-            .colorScheme
-            .primary
-            .copy(
-                alpha =
-                    0.88f *
-                        dropTargetProgress
-            )
-
-    Column(
+    Box(
         modifier =
-            Modifier
-                .fillMaxWidth()
+            modifier
+                .onGloballyPositioned { coordinates ->
+                    val position = coordinates.positionInRoot()
+                    onBoundsChanged(
+                        Rect(
+                            offset = position,
+                            size =
+                                Size(
+                                    coordinates.size.width.toFloat(),
+                                    coordinates.size.height.toFloat()
+                                )
+                        )
+                    )
+                }
                 .zIndex(
                     when {
-                        isDragging ->
-                            2f
-
-                        isSettling ->
-                            1f
-
-                        else ->
-                            0f
+                        isGestureActive -> 3f
+                        settleProgress.value > 0.001f -> 1f
+                        else -> 0f
                     }
                 )
                 .graphicsLayer {
                     translationX =
-                        if (
-                            isDragging
-                        ) {
-                            dragTranslation.x
-                        } else {
-                            animatedSettleTranslation.x
-                        }
-
+                        if (isGestureActive) dragTranslation.x
+                        else animatedSettleTranslation.x
                     translationY =
-                        if (
-                            isDragging
-                        ) {
-                            dragTranslation.y
-                        } else {
-                            animatedSettleTranslation.y
-                        }
-
-                    shadowElevation =
-                        dragElevationPx *
-                            dragLiftProgress
-
-                    this.shape =
-                        tileShape
-
-                    clip =
-                        false
+                        if (isGestureActive) dragTranslation.y
+                        else animatedSettleTranslation.y
+                    shadowElevation = dragElevationPx * dragLiftProgress
+                    this.shape = shape
+                    clip = false
                 }
-                .clip(
-                    tileShape
+                .then(
+                    if (isGestureActive) {
+                        Modifier.background(
+                            color =
+                                MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                                    alpha = 0.72f + (0.20f * dragLiftProgress)
+                                ),
+                            shape = shape
+                        )
+                    } else {
+                        Modifier
+                    }
                 )
                 .background(
-                    MaterialTheme
-                        .colorScheme
-                        .primaryContainer
-                        .copy(
-                            alpha =
-                                0.72f +
-                                    (0.22f *
-                                        dragLiftProgress) +
-                                    (0.05f *
-                                        dropTargetProgress)
-                        )
+                    color =
+                        MaterialTheme.colorScheme.onSurface.copy(
+                            alpha = 0.045f * dropTargetProgress
+                        ),
+                    shape = shape
                 )
                 .border(
-                    width =
-                        2.dp,
+                    width = 1.dp,
                     color =
-                        dropTargetBorder,
-                    shape =
-                        tileShape
+                        MaterialTheme.colorScheme.onSurface.copy(
+                            alpha = 0.30f * dropTargetProgress
+                        ),
+                    shape = shape
                 )
-                .pointerInput(
-                    app.componentName,
-                    app.user
-                ) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart =
-                            onDragStart,
-                        onDragEnd =
-                            onDragEnd,
-                        onDragCancel =
-                            onDragCancel,
-                        onDrag = {
-                                change,
-                                dragAmount ->
-
-                            change.consume()
-
-                            onDrag(
-                                dragAmount
-                            )
-                        }
-                    )
-                }
-                .launcherAppClickable(
-                    enabled =
-                        !isDragging,
-                    shape =
-                        tileShape,
-                    onClickLabel =
-                        "Quitar ${app.label} de la colección",
-                    onClick =
-                        onRemove
-                )
-                .padding(
-                    horizontal =
-                        5.dp,
-                    vertical =
-                        9.dp
-                ),
-        horizontalAlignment =
-            Alignment.CenterHorizontally
     ) {
-        Box {
-            Image(
-                bitmap =
-                    iconBitmap,
-                contentDescription =
-                    app.label,
-                modifier =
-                    Modifier.size(
-                        44.dp
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 92.dp)
+                    .pointerInput(app.componentName, app.user, dragStartThresholdPx) {
+                        var cumulativeDrag = Offset.Zero
+                        var actualDragStarted = false
+                        var longPressGestureActive = false
+
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { touchOffset ->
+                                cumulativeDrag = Offset.Zero
+                                actualDragStarted = false
+                                longPressGestureActive = true
+                                menuExpanded = false
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onDragStart(touchOffset)
+
+                                gestureScope.launch {
+                                    delay(LONG_PRESS_MENU_REVEAL_DELAY_MILLIS)
+                                    if (
+                                        longPressGestureActive &&
+                                        !actualDragStarted &&
+                                        !menuExpanded
+                                    ) {
+                                        menuExpanded = true
+                                    }
+                                }
+                            },
+                            onDrag = { change, dragAmount ->
+                                cumulativeDrag += dragAmount
+                                if (
+                                    !actualDragStarted &&
+                                    cumulativeDrag.getDistance() >= dragStartThresholdPx
+                                ) {
+                                    actualDragStarted = true
+                                    menuExpanded = false
+                                    change.consume()
+                                    onDrag(cumulativeDrag)
+                                } else if (actualDragStarted) {
+                                    change.consume()
+                                    onDrag(dragAmount)
+                                }
+                            },
+                            onDragEnd = {
+                                longPressGestureActive = false
+                                if (actualDragStarted) {
+                                    onDragEnd()
+                                } else {
+                                    onDragCancel()
+                                    if (!menuExpanded) menuExpanded = true
+                                }
+                                cumulativeDrag = Offset.Zero
+                                actualDragStarted = false
+                            },
+                            onDragCancel = {
+                                longPressGestureActive = false
+                                onDragCancel()
+                                cumulativeDrag = Offset.Zero
+                                actualDragStarted = false
+                            }
+                        )
+                    }
+                    .launcherAppClickable(
+                        enabled = !isGestureActive,
+                        shape = shape,
+                        onClickLabel = "Aplicación ${app.label}",
+                        onClick = {}
                     )
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            LauncherAppIconWithBadge(
+                bitmap = iconBitmap,
+                contentDescription = app.label,
+                iconSize = 42.dp,
+                notificationCount = notificationCount
             )
 
-            PositionBadge(
-                position =
-                    position,
-                modifier =
-                    Modifier.align(
-                        Alignment.TopEnd
-                    )
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                text = app.label,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    5.dp
-                )
-        )
-
-        Text(
-            text =
-                app.label,
-            maxLines =
-                1,
-            overflow =
-                TextOverflow.Ellipsis,
-            textAlign =
-                TextAlign.Center,
-            fontSize =
-                12.sp,
-            fontWeight =
-                FontWeight.Medium,
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onPrimaryContainer
-        )
-    }
-}
-
-@Composable
-private fun CollectionAppItem(
-    app: InstalledApp,
-    selectionPosition: Int?,
-    selected: Boolean,
-    onToggle: () -> Unit
-) {
-    val iconBitmap =
-        rememberLauncherAppIcon(
-            app
-        )
-
-    val shape =
-        RoundedCornerShape(
-            18.dp
-        )
-
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(
-                    shape
-                )
-                .background(
-                    if (
-                        selected
-                    ) {
-                        MaterialTheme
-                            .colorScheme
-                            .primaryContainer
-                            .copy(
-                                alpha =
-                                    0.42f
-                            )
-                    } else {
-                        Color.Transparent
-                    }
-                )
-                .launcherAppClickable(
-                    shape =
-                        shape,
-                    onClickLabel =
-                        if (
-                            selected
-                        ) {
-                            "Quitar ${app.label} de la colección"
-                        } else {
-                            "Agregar ${app.label} a la colección"
-                        },
-                    onClick =
-                        onToggle
-                )
-                .padding(
-                    horizontal =
-                        3.dp,
-                    vertical =
-                        7.dp
-                ),
-        horizontalAlignment =
-            Alignment.CenterHorizontally
-    ) {
-        Box {
-            Image(
-                bitmap =
-                    iconBitmap,
-                contentDescription =
-                    app.label,
-                modifier =
-                    Modifier.size(
-                        44.dp
-                    )
-            )
-
-            if (
-                selectionPosition != null
+        LauncherDropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            minWidth = 230.dp,
+            maxWidth = 280.dp
+        ) {
+            LauncherMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onRemove()
+                }
             ) {
-                PositionBadge(
-                    position =
-                        selectionPosition,
-                    modifier =
-                        Modifier.align(
-                            Alignment.TopEnd
-                        )
+                Text(
+                    text = "Quitar de la colección",
+                    fontSize = 15.sp
                 )
             }
         }
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    5.dp
-                )
-        )
-
-        Text(
-            text =
-                app.label,
-            maxLines =
-                2,
-            overflow =
-                TextOverflow.Ellipsis,
-            textAlign =
-                TextAlign.Center,
-            fontSize =
-                12.sp,
-            lineHeight =
-                13.sp,
-            fontWeight =
-                if (
-                    selected
-                ) {
-                    FontWeight.SemiBold
-                } else {
-                    FontWeight.Normal
-                },
-            color =
-                MaterialTheme
-                    .colorScheme
-                    .onSurface
-        )
     }
 }
 
 @Composable
-private fun PositionBadge(
-    position: Int,
-    modifier: Modifier =
-        Modifier
+private fun CollectionCatalogSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = {
+            Text("Buscar aplicaciones")
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                LauncherTextActionButton(
+                    text = "×",
+                    fontSize = 22.sp,
+                    deferActionForRipple = false,
+                    onClick = { onQueryChange("") }
+                )
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(28.dp)
+    )
+}
+
+@Composable
+private fun CollectionSelectedCatalogMarker(
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier =
-            modifier.size(
-                20.dp
-            ),
-        shape =
-            CircleShape,
-        color =
-            MaterialTheme
-                .colorScheme
-                .primary
+        modifier = modifier.size(20.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        shadowElevation = 1.dp
     ) {
         Box(
-            contentAlignment =
-                Alignment.Center
+            contentAlignment = Alignment.Center
         ) {
             Text(
-                text =
-                    position.toString(),
-                fontSize =
-                    11.sp,
-                fontWeight =
-                    FontWeight.Bold,
-                color =
-                    MaterialTheme
-                        .colorScheme
-                        .onPrimary
+                text = "✓",
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary
             )
         }
     }
 }
 
-private data class SwapAnimationRequest(
+private data class CollectionPreviewSwapAnimationRequest(
     val id: Long,
     val offsets: Map<String, Offset>
 )
 
-private fun selectedGridKey(
-    app: InstalledApp
-): String {
-    return COLLECTION_SELECTED_GRID_KEY_PREFIX +
-        appKey(
-            app
-        )
-}
-
-private fun findSelectedDropTarget(
-    gridState:
-        androidx.compose.foundation.lazy.grid.LazyGridState,
+private fun findCollectionPreviewDropTarget(
+    itemBoundsByKey: Map<String, Rect>,
     draggedAppKey: String,
     pointer: Offset
 ): String? {
-    return gridState
-        .layoutInfo
-        .visibleItemsInfo
+    return itemBoundsByKey
         .asSequence()
-        .mapNotNull {
-                item ->
+        .filter { (key, _) -> key != draggedAppKey }
+        .mapNotNull { (key, bounds) ->
+            val horizontalTolerance = bounds.width * 0.18f
+            val verticalTolerance = bounds.height * 0.18f
+            val isNear =
+                pointer.x >= bounds.left - horizontalTolerance &&
+                    pointer.x <= bounds.right + horizontalTolerance &&
+                    pointer.y >= bounds.top - verticalTolerance &&
+                    pointer.y <= bounds.bottom + verticalTolerance
 
-            val gridKey =
-                item.key as? String
-                    ?: return@mapNotNull null
-
-            if (
-                !gridKey.startsWith(
-                    COLLECTION_SELECTED_GRID_KEY_PREFIX
-                )
-            ) {
-                return@mapNotNull null
+            if (!isNear) {
+                null
+            } else {
+                val dx = pointer.x - bounds.center.x
+                val dy = pointer.y - bounds.center.y
+                key to (dx * dx + dy * dy)
             }
-
-            val candidateAppKey =
-                gridKey.removePrefix(
-                    COLLECTION_SELECTED_GRID_KEY_PREFIX
-                )
-
-            if (
-                candidateAppKey ==
-                draggedAppKey
-            ) {
-                return@mapNotNull null
-            }
-
-            val left =
-                item.offset.x.toFloat()
-
-            val top =
-                item.offset.y.toFloat()
-
-            val right =
-                left +
-                    item.size.width
-
-            val bottom =
-                top +
-                    item.size.height
-
-            val horizontalTolerance =
-                item.size.width *
-                    0.18f
-
-            val verticalTolerance =
-                item.size.height *
-                    0.18f
-
-            val isNearCandidate =
-                pointer.x >=
-                    left -
-                        horizontalTolerance &&
-                pointer.x <=
-                    right +
-                        horizontalTolerance &&
-                pointer.y >=
-                    top -
-                        verticalTolerance &&
-                pointer.y <=
-                    bottom +
-                        verticalTolerance
-
-            if (
-                !isNearCandidate
-            ) {
-                return@mapNotNull null
-            }
-
-            val centerX =
-                left +
-                    item.size.width /
-                        2f
-
-            val centerY =
-                top +
-                    item.size.height /
-                        2f
-
-            val dx =
-                pointer.x -
-                    centerX
-
-            val dy =
-                pointer.y -
-                    centerY
-
-            candidateAppKey to
-                (dx * dx +
-                    dy * dy)
         }
-        .minByOrNull {
-            it.second
-        }
+        .minByOrNull { it.second }
         ?.first
 }
 
 private fun swapSelectedApps(
-    selectedApps:
-        MutableList<InstalledApp>,
+    selectedApps: MutableList<InstalledApp>,
     sourceAppKey: String,
     targetAppKey: String
 ) {
-    val sourceIndex =
-        selectedApps
-            .indexOfFirst {
-                    app ->
+    val sourceIndex = selectedApps.indexOfFirst { appKey(it) == sourceAppKey }
+    val targetIndex = selectedApps.indexOfFirst { appKey(it) == targetAppKey }
 
-                appKey(
-                    app
-                ) ==
-                    sourceAppKey
-            }
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex) return
 
-    val targetIndex =
-        selectedApps
-            .indexOfFirst {
-                    app ->
-
-                appKey(
-                    app
-                ) ==
-                    targetAppKey
-            }
-
-    if (
-        sourceIndex < 0 ||
-        targetIndex < 0 ||
-        sourceIndex ==
-            targetIndex
-    ) {
-        return
-    }
-
-    /*
-     * Keep the same positional contract as Favorites: dropping one app
-     * over another swaps only those two positions. Apps in between do
-     * not shift.
-     */
-    val sourceApp =
-        selectedApps[
-            sourceIndex
-        ]
-
-    selectedApps[
-        sourceIndex
-    ] =
-        selectedApps[
-            targetIndex
-        ]
-
-    selectedApps[
-        targetIndex
-    ] =
-        sourceApp
-}
-
-private fun toggleSelection(
-    selectedApps: MutableList<InstalledApp>,
-    app: InstalledApp
-) {
-    val index =
-        selectedApps
-            .indexOfFirst {
-                isSameApp(
-                    first =
-                        it,
-                    second =
-                        app
-                )
-            }
-
-    if (
-        index >= 0
-    ) {
-        selectedApps
-            .removeAt(
-                index
-            )
-    } else {
-        selectedApps
-            .add(
-                app
-            )
-    }
+    val sourceApp = selectedApps[sourceIndex]
+    selectedApps[sourceIndex] = selectedApps[targetIndex]
+    selectedApps[targetIndex] = sourceApp
 }
 
 private fun removeSelectedApp(
     selectedApps: MutableList<InstalledApp>,
     app: InstalledApp
 ) {
-    val index =
-        selectedApps
-            .indexOfFirst {
-                isSameApp(
-                    first =
-                        it,
-                    second =
-                        app
-                )
-            }
-
-    if (
-        index >= 0
-    ) {
-        selectedApps
-            .removeAt(
-                index
-            )
-    }
+    val index = selectedApps.indexOfFirst { isSameApp(it, app) }
+    if (index >= 0) selectedApps.removeAt(index)
 }
 
 private fun isSameApp(
     first: InstalledApp,
     second: InstalledApp
 ): Boolean {
-    return first.componentName ==
-        second.componentName &&
-        first.user ==
-            second.user
+    return first.componentName == second.componentName &&
+        first.user == second.user
 }
 
-private fun appKey(
-    app: InstalledApp
-): String {
-    return "${app.user.hashCode()}:" +
-        app.componentName
-            .flattenToString()
-}
+private fun appKey(app: InstalledApp): String =
+    app.componentName.flattenToString() + "@" + app.user.hashCode()
 
-private const val COLLECTION_SELECTED_GRID_KEY_PREFIX =
-    "collection-selected:"
+private const val LONG_PRESS_MENU_REVEAL_DELAY_MILLIS = 140L

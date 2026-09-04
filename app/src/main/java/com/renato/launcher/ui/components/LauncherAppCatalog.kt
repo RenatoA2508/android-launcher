@@ -69,6 +69,8 @@ fun LauncherAppCatalog(
     appsLoaded: Boolean,
     modifier: Modifier = Modifier,
     preloadCount: Int = 16,
+    userScrollEnabled: Boolean = true,
+    emptyStateText: String? = null,
     headerContent: (@Composable () -> Unit)? = null,
     appContent: @Composable (InstalledApp) -> Unit
 ) {
@@ -130,6 +132,19 @@ fun LauncherAppCatalog(
             }
         }
 
+    val showAlphabetRail by
+        remember(
+            gridState,
+            headerItemCount,
+            layout.sections
+        ) {
+            derivedStateOf {
+                layout.sections.isNotEmpty() &&
+                    (headerItemCount == 0 ||
+                        gridState.firstVisibleItemIndex >= headerItemCount)
+            }
+        }
+
     fun jumpToSection(key: String) {
         val targetIndex =
             layout.startIndexByKey[key] ?: return
@@ -163,7 +178,8 @@ fun LauncherAppCatalog(
         ) {
             LauncherAppCatalogEmptyState(
                 appsLoaded = appsLoaded,
-                fillAvailableSpace = true
+                fillAvailableSpace = true,
+                emptyStateText = emptyStateText
             )
         } else {
             LazyVerticalGrid(
@@ -178,7 +194,8 @@ fun LauncherAppCatalog(
                         bottom = 24.dp
                     ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                userScrollEnabled = userScrollEnabled
             ) {
                 headerContent?.let { header ->
                     item(
@@ -202,7 +219,8 @@ fun LauncherAppCatalog(
                     ) {
                         LauncherAppCatalogEmptyState(
                             appsLoaded = appsLoaded,
-                            fillAvailableSpace = false
+                            fillAvailableSpace = false,
+                            emptyStateText = emptyStateText
                         )
                     }
                 } else {
@@ -235,7 +253,7 @@ fun LauncherAppCatalog(
             }
         }
 
-        if (layout.sections.isNotEmpty()) {
+        if (showAlphabetRail) {
             LauncherAlphabetRail(
                 availableKeys = layout.startIndexByKey.keys,
                 currentKey = currentSectionKey,
@@ -526,7 +544,8 @@ private fun LauncherCatalogLetterIndicator(
 @Composable
 private fun LauncherAppCatalogEmptyState(
     appsLoaded: Boolean,
-    fillAvailableSpace: Boolean
+    fillAvailableSpace: Boolean,
+    emptyStateText: String?
 ) {
     Box(
         modifier =
@@ -542,7 +561,7 @@ private fun LauncherAppCatalogEmptyState(
         Text(
             text =
                 if (appsLoaded) {
-                    "No hay aplicaciones disponibles"
+                    emptyStateText ?: "No hay aplicaciones disponibles"
                 } else {
                     "Cargando aplicaciones…"
                 },

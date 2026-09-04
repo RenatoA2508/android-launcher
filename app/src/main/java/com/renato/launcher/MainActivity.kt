@@ -965,8 +965,14 @@ class MainActivity :
                             FavoritePickerScreen(
                                 apps =
                                     installedApps,
+                                appsLoaded =
+                                    installedAppsLoaded,
                                 initialSelection =
                                     favoriteApps,
+                                collections =
+                                    savedCollections,
+                                collectionAppsById =
+                                    collectionAppsById,
                                 onManageCollections = {
                                     currentScreen =
                                         LauncherScreen
@@ -978,18 +984,46 @@ class MainActivity :
                                             .HOME
                                 },
                                 onSave = {
-                                        selectedApps ->
+                                        selectedApps,
+                                        reorderedCollections,
+                                        editedCollectionAppsById ->
 
                                     /*
-                                     * Home can show the selected order on the
-                                     * very next frame instead of waiting for
-                                     * the Room Flow round trip.
+                                     * Home can show the complete preview draft
+                                     * on the very next frame instead of waiting
+                                     * for the Room Flow round trip.
                                      */
                                     favoriteApps =
                                         selectedApps
 
                                     favoriteAppsLoaded =
                                         true
+
+                                    val normalizedCollections =
+                                        reorderedCollections
+                                            .mapIndexed { index, collection ->
+                                                collection.copy(position = index)
+                                            }
+
+                                    val remainingCollectionIds =
+                                        normalizedCollections
+                                            .map { it.id }
+                                            .toSet()
+
+                                    val deletedCollectionIds =
+                                        savedCollections
+                                            .map { it.id }
+                                            .filterNot { it in remainingCollectionIds }
+
+                                    val normalizedCollectionAppsById =
+                                        editedCollectionAppsById
+                                            .filterKeys { it in remainingCollectionIds }
+
+                                    savedCollections =
+                                        normalizedCollections
+
+                                    collectionAppsById =
+                                        normalizedCollectionAppsById
 
                                     currentScreen =
                                         LauncherScreen
@@ -1000,6 +1034,31 @@ class MainActivity :
                                             favoriteRepository
                                                 .replaceFavorites(
                                                     selectedApps
+                                                )
+
+                                            deletedCollectionIds
+                                                .forEach { collectionId ->
+                                                    collectionRepository
+                                                        .deleteCollection(
+                                                            collectionId
+                                                        )
+                                                }
+
+                                            normalizedCollections
+                                                .forEach { collection ->
+                                                    collectionRepository
+                                                        .updateCollection(
+                                                            collectionId = collection.id,
+                                                            name = collection.name,
+                                                            apps =
+                                                                normalizedCollectionAppsById[collection.id]
+                                                                    .orEmpty()
+                                                        )
+                                                }
+
+                                            collectionRepository
+                                                .replaceCollectionOrder(
+                                                    normalizedCollections
                                                 )
                                         }
                                 }
@@ -1085,6 +1144,8 @@ class MainActivity :
                             CollectionEditorScreen(
                                 apps =
                                     installedApps,
+                                appsLoaded =
+                                    installedAppsLoaded,
                                 initialName =
                                     editingCollection
                                         ?.name

@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -16,7 +15,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.Role
@@ -29,7 +32,6 @@ import com.renato.launcher.ui.theme.LauncherTheme
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val swatches = listOf("F6F3ED", "20242E", "4268DA", "187C68", "BB466C", "FFBF61")
 private fun hex(argb: Int) = "%06X".format(Locale.ROOT, argb and 0xFFFFFF)
 private fun parseHex(text: String): Int? = text.trim().removePrefix("#")
     .takeIf { it.matches(Regex("[0-9a-fA-F]{6}")) }?.toInt(16)?.or(0xFF000000.toInt())
@@ -44,9 +46,11 @@ fun ColorSettingsScreen(
     var custom by rememberSaveable { mutableStateOf(saved.custom) }
     var accent by rememberSaveable { mutableStateOf(hex(saved.accent)) }
     var panel by rememberSaveable { mutableStateOf(hex(saved.panel)) }
+    var accentColor by rememberSaveable { mutableIntStateOf(saved.accent) }
+    var panelColor by rememberSaveable { mutableIntStateOf(saved.panel) }
     var opacity by rememberSaveable { mutableIntStateOf(saved.opacity) }
     var editAccent by rememberSaveable { mutableStateOf(true) }
-    val draft = LauncherColors(custom, parseHex(accent) ?: saved.accent, parseHex(panel) ?: saved.panel, opacity)
+    val draft = LauncherColors(custom, accentColor, panelColor, opacity)
     val valid = !custom || (parseHex(accent) != null && parseHex(panel) != null)
     BackHandler(onBack = onCancel)
 
@@ -81,20 +85,21 @@ fun ColorSettingsScreen(
                             FilterChip(!editAccent, { editAccent = false }, label = { Text("Paneles") })
                         }
                         val value = if (editAccent) accent else panel
-                        val change: (String) -> Unit = { if (editAccent) accent = it else panel = it }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            swatches.forEach { sample ->
-                                val color = Color(parseHex(sample)!!)
-                                val selected = parseHex(value) == color.toArgb()
-                                Box(Modifier.size(44.dp).clip(CircleShape)
-                                    .selectable(selected, role = Role.RadioButton, onClick = { change(sample) })
-                                    .semantics { contentDescription = "#$sample" }, contentAlignment = Alignment.Center) {
-                                    Box(Modifier.size(32.dp).background(color, CircleShape)
-                                        .border(1.dp, scheme.outline, CircleShape), contentAlignment = Alignment.Center) {
-                                        if (selected) Text("✓", color = ink(color))
-                                    }
-                                }
+                        val change: (String) -> Unit = { input ->
+                            if (editAccent) {
+                                accent = input
+                                parseHex(input)?.let { accentColor = it }
+                            } else {
+                                panel = input
+                                parseHex(input)?.let { panelColor = it }
                             }
+                        }
+                        key(editAccent) {
+                            HueSlider(
+                                argb = if (editAccent) accentColor else panelColor,
+                                label = if (editAccent) "Color del acento" else "Color de los paneles",
+                                onColorChange = { change(hex(it)) }
+                            )
                         }
                         OutlinedTextField(value, change, Modifier.fillMaxWidth(), singleLine = true,
                             label = { Text(if (editAccent) "HEX del acento" else "HEX de los paneles") },
@@ -116,6 +121,8 @@ fun ColorSettingsScreen(
                         custom = false
                         accent = hex(defaults.accent)
                         panel = hex(defaults.panel)
+                        accentColor = defaults.accent
+                        panelColor = defaults.panel
                         opacity = defaults.opacity
                     }) { Text("Restablecer colores del sistema") }
                 }
@@ -131,6 +138,62 @@ fun ColorSettingsScreen(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HueSlider(argb: Int, label: String, onColorChange: (Int) -> Unit) {
+    val hsv = remember(argb) {
+        FloatArray(3).also { android.graphics.Color.colorToHSV(argb, it) }
+    }
+    // Red occurs at both ends. Keep the thumb on the end the user dragged to.
+    var nearEnd by rememberSaveable { mutableStateOf(false) }
+    val hue = if (nearEnd && hsv[0] == 0f) 360f else hsv[0]
+    // Neutral colors have no hue. Moving the thumb starts a chromatic selection.
+    val saturation = hsv[1].takeIf { it > 0f } ?: 1f
+    val brightness = hsv[2].takeIf { it > 0f } ?: 1f
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val gradient = remember(saturation, brightness, rtl) {
+        val stops = (0..6).map { Color.hsv(it * 60f, saturation, brightness) }
+        Brush.horizontalGradient(if (rtl) stops.reversed() else stops)
+    }
+    val selected = Color(argb)
+    val code = "#" + hex(argb)
+    val thumbSize = 24.dp
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val badgeWidth = minOf(84.dp, maxWidth)
+        val center = thumbSize / 2 + (maxWidth - thumbSize) * (hue / 360f)
+        Surface(
+            modifier = Modifier.offset(x = (center - badgeWidth / 2).coerceIn(0.dp, maxWidth - badgeWidth))
+                .width(badgeWidth),
+            shape = CircleShape, color = selected, contentColor = ink(selected),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Box(Modifier.padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
+                Text(code, style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace)
+            }
+        }
+        Slider(
+            value = hue,
+            onValueChange = { degrees ->
+                nearEnd = degrees > 180f
+                onColorChange(Color.hsv(degrees, saturation, brightness).toArgb())
+            },
+            valueRange = 0f..360f,
+            modifier = Modifier.fillMaxWidth().padding(top = 25.dp).semantics {
+                contentDescription = label
+                stateDescription = code
+            },
+            thumb = {
+                Box(Modifier.size(thumbSize).background(selected, CircleShape)
+                    .border(2.dp, ink(selected), CircleShape))
+            },
+            track = {
+                Box(Modifier.fillMaxWidth().height(12.dp).background(gradient, CircleShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
+            }
+        )
     }
 }
 

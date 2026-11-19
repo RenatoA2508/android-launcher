@@ -10,7 +10,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,7 +112,8 @@ fun HomeScreen(
     onAppClick: (InstalledApp) -> Unit,
     onChooseFavorites: () -> Unit,
     onEditFavorites: () -> Unit,
-    onOpenSearch: () -> Unit,
+    onSearchDrag: (Float) -> Unit,
+    onSearchRelease: (Boolean) -> Unit,
     onAppInfo: (InstalledApp) -> Unit,
     onRemoveFavorite: (InstalledApp) -> Unit,
     onReorderFavorites: (List<InstalledApp>) -> Unit,
@@ -154,16 +157,6 @@ fun HomeScreen(
             collectionApps
     )
 
-    val density =
-        LocalDensity.current
-
-    val swipeThresholdPx =
-        remember(density) {
-            with(density) {
-                72.dp.toPx()
-            }
-        }
-
     Surface(
         modifier =
             Modifier
@@ -182,55 +175,31 @@ fun HomeScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(
-                        onOpenSearch,
-                        swipeThresholdPx
-                    ) {
-                        var totalVerticalDrag =
-                            0f
-
-                        detectVerticalDragGestures(
-                            onDragStart = {
-                                totalVerticalDrag =
-                                    0f
-                            },
-                            onVerticalDrag = {
-                                    change,
-                                    dragAmount ->
-
-                                totalVerticalDrag +=
-                                    dragAmount
-
-                                /*
-                                 * Consume only once this clearly
-                                 * becomes a vertical swipe. Normal
-                                 * taps and long presses remain
-                                 * available to the app item.
-                                 */
-                                if (
-                                    kotlin.math.abs(
-                                        totalVerticalDrag
-                                    ) > 12f
-                                ) {
+                    .pointerInput(onSearchDrag, onSearchRelease) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, _ ->
+                                change.consume()
+                            } ?: return@awaitEachGesture
+                            val height = size.height.coerceAtLeast(1)
+                            var previousY = down.position.y
+                            var change = start
+                            var completed = false
+                            try {
+                                while (true) {
+                                    onSearchDrag((previousY - change.position.y) / height)
+                                    previousY = change.position.y
                                     change.consume()
+                                    if (!change.pressed) break
+                                    change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                                        ?: return@awaitEachGesture
+                                    if (change.isConsumed) return@awaitEachGesture
                                 }
-                            },
-                            onDragEnd = {
-                                if (
-                                    totalVerticalDrag <=
-                                    -swipeThresholdPx
-                                ) {
-                                    onOpenSearch()
-                                }
-
-                                totalVerticalDrag =
-                                    0f
-                            },
-                            onDragCancel = {
-                                totalVerticalDrag =
-                                    0f
+                                completed = true
+                            } finally {
+                                onSearchRelease(!completed)
                             }
-                        )
+                        }
                     }
                     .launcherGestureCombinedClickable(
                         onClick = {

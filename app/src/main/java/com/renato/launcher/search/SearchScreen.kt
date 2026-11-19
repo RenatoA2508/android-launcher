@@ -75,6 +75,7 @@ import com.renato.launcher.ui.interactions.launcherTransitionClickable
 
 @Composable
 fun SearchScreen(
+    active: Boolean,
     apps: List<InstalledApp>,
     recentApps: List<InstalledApp>,
     recentSearchApps: List<InstalledApp>,
@@ -89,7 +90,7 @@ fun SearchScreen(
     onOpenAllApps: () -> Unit,
     onBack: () -> Unit
 ) {
-    SearchWindowEffect()
+    if (active) SearchWindowEffect()
 
     val notificationCounts by
         NotificationBadgeStore
@@ -325,7 +326,7 @@ fun SearchScreen(
             }
         }
 
-    BackHandler {
+    BackHandler(enabled = active) {
         closeSearch()
     }
 
@@ -336,7 +337,8 @@ fun SearchScreen(
      * frame 2 -> request focus
      * frame 3 -> show keyboard
      */
-    LaunchedEffect(Unit) {
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
 
         withFrameNanos { }
 

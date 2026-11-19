@@ -12,6 +12,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -753,6 +758,24 @@ class MainActivity :
                 if (
                     isHomeApp
                 ) {
+                    var reveal by remember(homeRequestRevision, currentScreen) { mutableFloatStateOf(0f) }
+                    var destination by remember(homeRequestRevision, currentScreen) { mutableStateOf<Float?>(null) }
+                    val drag: (Float) -> Unit = remember(homeRequestRevision, currentScreen) {
+                        { delta ->
+                            destination = null
+                            reveal = (reveal + delta).coerceIn(0f, 1f)
+                        }
+                    }
+                    val release: (Boolean) -> Unit = remember(homeRequestRevision, currentScreen) {
+                        { cancelled -> destination = if (!cancelled && reveal >= 0.5f) 1f else 0f }
+                    }
+                    LaunchedEffect(destination, homeRequestRevision, currentScreen) {
+                        val end = destination ?: return@LaunchedEffect
+                        animate(reveal, end, animationSpec = tween(180)) { value, _ -> reveal = value }
+                        if (end == 1f) currentScreen = LauncherScreen.SEARCH
+                        destination = null
+                    }
+                    Box(Modifier.fillMaxSize()) {
                     when (
                         currentScreen
                     ) {
@@ -799,11 +822,8 @@ class MainActivity :
                                         LauncherScreen
                                             .FAVORITES
                                 },
-                                onOpenSearch = {
-                                    currentScreen =
-                                        LauncherScreen
-                                            .SEARCH
-                                },
+                                onSearchDrag = drag,
+                                onSearchRelease = release,
                                 onAppInfo = {
                                         app ->
 
@@ -1221,8 +1241,63 @@ class MainActivity :
                             )
                         }
 
-                        LauncherScreen.SEARCH -> {
-                            SearchScreen(
+                        LauncherScreen.SEARCH -> Unit
+
+                        LauncherScreen.ALL_APPS -> {
+                            AllAppsScreen(
+                                apps =
+                                    installedApps,
+                                appsLoaded =
+                                    installedAppsLoaded,
+                                onAppClick = {
+                                        app ->
+
+                                    currentScreen =
+                                        LauncherScreen
+                                            .HOME
+
+                                    appRepository
+                                        .launch(
+                                            app
+                                        )
+
+                                    LauncherMutationQueue
+                                        .submit {
+                                            recentRepository
+                                                .recordLaunch(
+                                                    app
+                                                )
+                                        }
+                                },
+                                onAppInfo = {
+                                        app ->
+
+                                    openAppInfo(
+                                        app
+                                    )
+                                },
+                                onUninstallApp = {
+                                        app ->
+
+                                    requestAppUninstall(
+                                        app
+                                    )
+                                },
+                                onBack = {
+                                    currentScreen =
+                                        LauncherScreen
+                                            .SEARCH
+                                }
+                            )
+                        }
+                    }
+                        val searchOpen = currentScreen == LauncherScreen.SEARCH
+                        if (searchOpen || (currentScreen == LauncherScreen.HOME && reveal > 0f)) {
+                            Box(Modifier.fillMaxSize().graphicsLayer {
+                                translationY = if (searchOpen) 0f else size.height * (1f - reveal)
+                            }) {
+                                SearchScreen(
+                                active = searchOpen,
                                 apps =
                                     installedApps,
                                 recentApps =
@@ -1315,54 +1390,7 @@ class MainActivity :
                                             .HOME
                                 }
                             )
-                        }
-
-                        LauncherScreen.ALL_APPS -> {
-                            AllAppsScreen(
-                                apps =
-                                    installedApps,
-                                appsLoaded =
-                                    installedAppsLoaded,
-                                onAppClick = {
-                                        app ->
-
-                                    currentScreen =
-                                        LauncherScreen
-                                            .HOME
-
-                                    appRepository
-                                        .launch(
-                                            app
-                                        )
-
-                                    LauncherMutationQueue
-                                        .submit {
-                                            recentRepository
-                                                .recordLaunch(
-                                                    app
-                                                )
-                                        }
-                                },
-                                onAppInfo = {
-                                        app ->
-
-                                    openAppInfo(
-                                        app
-                                    )
-                                },
-                                onUninstallApp = {
-                                        app ->
-
-                                    requestAppUninstall(
-                                        app
-                                    )
-                                },
-                                onBack = {
-                                    currentScreen =
-                                        LauncherScreen
-                                            .SEARCH
-                                }
-                            )
+                            }
                         }
                     }
                 } else {

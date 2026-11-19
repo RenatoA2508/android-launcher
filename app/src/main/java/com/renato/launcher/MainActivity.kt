@@ -1,5 +1,6 @@
 package com.renato.launcher
 
+import com.renato.launcher.appearance.*
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -64,6 +65,7 @@ import kotlinx.coroutines.yield
 
 private enum class LauncherScreen {
     HOME,
+    COLORS,
     FAVORITES,
     COLLECTIONS,
     COLLECTION_EDITOR,
@@ -140,7 +142,8 @@ class MainActivity :
             )
 
         setContent {
-            LauncherTheme {
+            var colors by remember { mutableStateOf(LauncherColors.read(this)) }
+            LauncherTheme(colors = colors) {
                 val roleManager =
                     getSystemService(
                         RoleManager::class.java
@@ -786,6 +789,7 @@ class MainActivity :
                                 homeRequestRevision
                             ) {
                                 HomeScreen(
+                                modifier = Modifier.graphicsLayer { alpha = 1f - reveal },
                                 favoriteApps =
                                     favoriteApps,
                                 favoritesLoaded =
@@ -824,6 +828,7 @@ class MainActivity :
                                         LauncherScreen
                                             .FAVORITES
                                 },
+                                onAppearance = { currentScreen = LauncherScreen.COLORS },
                                 onSearchDrag = drag,
                                 onSearchRelease = release,
                                 onSearchShortcut = { currentScreen = LauncherScreen.SEARCH },
@@ -984,6 +989,17 @@ class MainActivity :
                             }
                         }
 
+                        LauncherScreen.COLORS -> ColorSettingsScreen(
+                            saved = colors,
+                            apps = favoriteApps.ifEmpty { installedApps }.take(3),
+                            onCancel = { currentScreen = LauncherScreen.HOME },
+                            onSave = {
+                                it.save(this@MainActivity)
+                                colors = it
+                                currentScreen = LauncherScreen.HOME
+                            }
+                        )
+
                         LauncherScreen.FAVORITES -> {
                             FavoritePickerScreen(
                                 apps =
@@ -1088,7 +1104,7 @@ class MainActivity :
                             )
                         }
 
-                        LauncherScreen.COLLECTIONS -> {
+                        LauncherScreen.COLLECTIONS -> PanelTheme {
                             CollectionManagerScreen(
                                 collections =
                                     savedCollections,
@@ -1149,7 +1165,7 @@ class MainActivity :
                             )
                         }
 
-                        LauncherScreen.COLLECTION_EDITOR -> {
+                        LauncherScreen.COLLECTION_EDITOR -> PanelTheme {
                             val editingCollection =
                                 editingCollectionId
                                     ?.let {
@@ -1302,100 +1318,102 @@ class MainActivity :
                                 shape = RoundedCornerShape(topStart = radius, topEnd = radius)
                                 clip = !searchOpen
                             }) {
+                                PanelTheme {
                                 SearchScreen(
-                                active = searchOpen,
-                                apps =
-                                    installedApps,
-                                recentApps =
-                                    recentSections
-                                        .recentApps,
-                                recentSearchApps =
-                                    recentSections
-                                        .searchedApps,
-                                favoriteApps =
-                                    favoriteApps,
-                                onAppClick = {
-                                        app,
-                                        recordAsSearch ->
+                                        active = searchOpen,
+                                        apps =
+                                            installedApps,
+                                        recentApps =
+                                            recentSections
+                                                .recentApps,
+                                        recentSearchApps =
+                                            recentSections
+                                                .searchedApps,
+                                        favoriteApps =
+                                            favoriteApps,
+                                        onAppClick = {
+                                                app,
+                                                recordAsSearch ->
 
-                                    currentScreen =
-                                        LauncherScreen
-                                            .HOME
+                                            currentScreen =
+                                                LauncherScreen
+                                                    .HOME
 
-                                    appRepository
-                                        .launch(
-                                            app
-                                        )
-
-                                    LauncherMutationQueue
-                                        .submit {
-                                            if (
-                                                recordAsSearch
-                                            ) {
-                                                recentRepository
-                                                    .recordSearchLaunch(
-                                                        app
-                                                    )
-                                            } else {
-                                                recentRepository
-                                                    .recordLaunch(
-                                                        app
-                                                    )
-                                            }
-                                        }
-                                },
-                                onAppInfo = {
-                                        app ->
-
-                                    openAppInfo(
-                                        app
-                                    )
-                                },
-                                onRemoveFavorite = {
-                                        app ->
-
-                                    val remainingFavorites =
-                                        favoriteApps
-                                            .filterNot {
-                                                    favorite ->
-
-                                                isSameApp(
-                                                    first =
-                                                        favorite,
-                                                    second =
-                                                        app
+                                            appRepository
+                                                .launch(
+                                                    app
                                                 )
-                                            }
 
-                                    favoriteApps =
-                                        remainingFavorites
+                                            LauncherMutationQueue
+                                                .submit {
+                                                    if (
+                                                        recordAsSearch
+                                                    ) {
+                                                        recentRepository
+                                                            .recordSearchLaunch(
+                                                                app
+                                                            )
+                                                    } else {
+                                                        recentRepository
+                                                            .recordLaunch(
+                                                                app
+                                                            )
+                                                    }
+                                                }
+                                        },
+                                        onAppInfo = {
+                                                app ->
 
-                                    LauncherMutationQueue
-                                        .submit {
-                                            favoriteRepository
-                                                .replaceFavorites(
-                                                    remainingFavorites
-                                                )
+                                            openAppInfo(
+                                                app
+                                            )
+                                        },
+                                        onRemoveFavorite = {
+                                                app ->
+
+                                            val remainingFavorites =
+                                                favoriteApps
+                                                    .filterNot {
+                                                            favorite ->
+
+                                                        isSameApp(
+                                                            first =
+                                                                favorite,
+                                                            second =
+                                                                app
+                                                        )
+                                                    }
+
+                                            favoriteApps =
+                                                remainingFavorites
+
+                                            LauncherMutationQueue
+                                                .submit {
+                                                    favoriteRepository
+                                                        .replaceFavorites(
+                                                            remainingFavorites
+                                                        )
+                                                }
+                                        },
+                                        onUninstallApp = {
+                                                app ->
+
+                                            requestAppUninstall(
+                                                app
+                                            )
+                                        },
+                                        onOpenAllApps = {
+                                            currentScreen =
+                                                LauncherScreen
+                                                    .ALL_APPS
+                                        },
+                                        onBack = {
+                                            currentScreen =
+                                                LauncherScreen
+                                                    .HOME
                                         }
-                                },
-                                onUninstallApp = {
-                                        app ->
-
-                                    requestAppUninstall(
-                                        app
                                     )
-                                },
-                                onOpenAllApps = {
-                                    currentScreen =
-                                        LauncherScreen
-                                            .ALL_APPS
-                                },
-                                onBack = {
-                                    currentScreen =
-                                        LauncherScreen
-                                            .HOME
                                 }
-                            )
                             }
                         }
                     }

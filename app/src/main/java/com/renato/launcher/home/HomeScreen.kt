@@ -1,5 +1,9 @@
 package com.renato.launcher.home
 
+import com.renato.launcher.appearance.PanelTheme
+import com.renato.launcher.appearance.panelColor
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
 import android.text.format.DateFormat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -101,6 +105,7 @@ import java.util.Date
 )
 @Composable
 fun HomeScreen(
+    modifier: Modifier = Modifier,
     favoriteApps: List<InstalledApp>,
     favoritesLoaded: Boolean,
     collections: List<CollectionEntity>,
@@ -109,6 +114,7 @@ fun HomeScreen(
     onAppClick: (InstalledApp) -> Unit,
     onChooseFavorites: () -> Unit,
     onEditFavorites: () -> Unit,
+    onAppearance: () -> Unit,
     onSearchDrag: (Float) -> Unit,
     onSearchRelease: (Boolean) -> Unit,
     onSearchShortcut: () -> Unit,
@@ -155,9 +161,32 @@ fun HomeScreen(
             collectionApps
     )
 
+    var homeMenu by remember { mutableStateOf(false) }
+    if (homeMenu) {
+        AlertDialog(
+            onDismissRequest = { homeMenu = false },
+            title = { Text("Inicio") },
+            text = {
+                Column {
+                    DropdownMenuItem(text = { Text("Editar favoritas") }, onClick = {
+                        homeMenu = false
+                        onEditFavorites()
+                    })
+                    DropdownMenuItem(text = { Text("Apariencia → Colores") }, onClick = {
+                        homeMenu = false
+                        onAppearance()
+                    })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { homeMenu = false }) { Text("Cerrar") }
+            }
+        )
+    }
+
     Surface(
         modifier =
-            Modifier
+            modifier
                 .fillMaxSize()
                 .semantics {
                     testTagsAsResourceId =
@@ -179,14 +208,8 @@ fun HomeScreen(
                             // Empty Home tap does nothing.
                         },
                         onLongClickLabel =
-                            "Editar Favoritas",
-                        onLongClick = {
-                            if (
-                                favoritesLoaded
-                            ) {
-                                onEditFavorites()
-                            }
-                        }
+                            "Opciones de Inicio",
+                        onLongClick = { homeMenu = true }
                     )
                     .statusBarsPadding()
                     .navigationBarsPadding()
@@ -1970,58 +1993,60 @@ private fun HomeCollectionsSection(
     if (
         openCollection != null
     ) {
-        CollectionHomeBottomSheet(
-            collection =
-                openCollection,
-            apps =
-                collectionAppsById[
-                    openCollection.id
-                ].orEmpty(),
-            notificationCountFor =
-                notificationCountFor,
-            onDismiss = {
-                openCollectionId =
-                    null
-            },
-            onEditCollection = {
-                openCollectionId =
-                    null
+        PanelTheme(scrim = MaterialTheme.colorScheme.scrim.copy(alpha = .32f)) {
+            CollectionHomeBottomSheet(
+                collection =
+                    openCollection,
+                apps =
+                    collectionAppsById[
+                        openCollection.id
+                    ].orEmpty(),
+                notificationCountFor =
+                    notificationCountFor,
+                onDismiss = {
+                    openCollectionId =
+                        null
+                },
+                onEditCollection = {
+                    openCollectionId =
+                        null
 
-                onEditCollection(
-                    openCollection.id
-                )
-            },
-            onAppClick = {
-                    app ->
+                    onEditCollection(
+                        openCollection.id
+                    )
+                },
+                onAppClick = {
+                        app ->
 
-                openCollectionId =
-                    null
+                    openCollectionId =
+                        null
 
-                onAppClick(
-                    app
-                )
-            },
-            onAppInfo =
-                onAppInfo,
-            onReorderApps = {
-                    reorderedApps ->
+                    onAppClick(
+                        app
+                    )
+                },
+                onAppInfo =
+                    onAppInfo,
+                onReorderApps = {
+                        reorderedApps ->
 
-                onReorderCollectionApps(
-                    openCollection.id,
-                    reorderedApps
-                )
-            },
-            onRemoveApp = {
-                    app ->
+                    onReorderCollectionApps(
+                        openCollection.id,
+                        reorderedApps
+                    )
+                },
+                onRemoveApp = {
+                        app ->
 
-                onRemoveAppFromCollection(
-                    openCollection.id,
-                    app
-                )
-            },
-            onUninstallApp =
-                onUninstallApp
-        )
+                    onRemoveAppFromCollection(
+                        openCollection.id,
+                        app
+                    )
+                },
+                onUninstallApp =
+                    onUninstallApp
+            )
+        }
     }
 }
 
@@ -2940,10 +2965,8 @@ private fun CollectionHomeBottomSheet(
             onDismiss,
         sheetState =
             sheetState,
-        containerColor =
-            MaterialTheme
-                .colorScheme
-                .surface
+        containerColor = panelColor(1f),
+        contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
             modifier =

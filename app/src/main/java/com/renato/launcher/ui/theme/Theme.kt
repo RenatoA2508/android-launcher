@@ -1,5 +1,8 @@
 package com.renato.launcher.ui.theme
 
+import com.renato.launcher.appearance.*
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +28,7 @@ fun LauncherTheme(
     darkTheme: Boolean =
         isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
+    colors: LauncherColors = LauncherColors(),
     content: @Composable () -> Unit
 ) {
     val context =
@@ -64,9 +68,15 @@ fun LauncherTheme(
                 LightFallbackColorScheme
         }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    val palette = if (colors.custom) {
+        val accent = Color(colors.accent)
+        val foregroundAccent = readableAccent(accent, colorScheme.surface)
+        colorScheme.copy(primary = foregroundAccent, onPrimary = ink(foregroundAccent),
+            secondary = foregroundAccent, onSecondary = ink(foregroundAccent),
+            primaryContainer = accent, onPrimaryContainer = ink(accent),
+            secondaryContainer = accent, onSecondaryContainer = ink(accent))
+    } else colorScheme
+    CompositionLocalProvider(LocalLauncherColors provides colors) {
+        MaterialTheme(colorScheme = palette, typography = Typography, content = content)
+    }
 }

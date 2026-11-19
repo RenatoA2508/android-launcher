@@ -1,5 +1,6 @@
 package com.renato.launcher.collections
 
+import com.renato.launcher.appearance.panelColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -180,7 +181,7 @@ fun CollectionEditorScreen(
             Modifier
                 .fillMaxSize()
                 .background(
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
+                    panelColor(.78f)
                 )
     ) {
         Column(

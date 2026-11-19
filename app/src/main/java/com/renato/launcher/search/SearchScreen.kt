@@ -1,5 +1,8 @@
 package com.renato.launcher.search
 
+import com.renato.launcher.appearance.LocalLauncherColors
+import com.renato.launcher.appearance.StatusBarOn
+import com.renato.launcher.appearance.panelColor
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -90,7 +93,10 @@ fun SearchScreen(
     onOpenAllApps: () -> Unit,
     onBack: () -> Unit
 ) {
-    if (active) SearchWindowEffect()
+    if (active) {
+        SearchWindowEffect()
+        if (LocalLauncherColors.current.custom) StatusBarOn(MaterialTheme.colorScheme.surface)
+    }
 
     val notificationCounts by
         NotificationBadgeStore
@@ -387,12 +393,7 @@ fun SearchScreen(
                     SEARCH_ROOT_TAG
                 ),
         color =
-            MaterialTheme
-                .colorScheme
-                .surface
-                .copy(
-                    alpha = 0.82f
-                )
+            panelColor(.82f)
     ) {
 
         Column(

@@ -16,7 +16,9 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -824,6 +826,7 @@ class MainActivity :
                                 },
                                 onSearchDrag = drag,
                                 onSearchRelease = release,
+                                onSearchShortcut = { currentScreen = LauncherScreen.SEARCH },
                                 onAppInfo = {
                                         app ->
 
@@ -1295,6 +1298,9 @@ class MainActivity :
                         if (searchOpen || (currentScreen == LauncherScreen.HOME && reveal > 0f)) {
                             Box(Modifier.fillMaxSize().graphicsLayer {
                                 translationY = if (searchOpen) 0f else size.height * (1f - reveal)
+                                val radius = minOf(28.dp.toPx(), translationY).toDp()
+                                shape = RoundedCornerShape(topStart = radius, topEnd = radius)
+                                clip = !searchOpen
                             }) {
                                 SearchScreen(
                                 active = searchOpen,

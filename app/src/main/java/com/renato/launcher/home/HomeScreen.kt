@@ -1497,7 +1497,7 @@ private fun FavoriteAppItem(
 }
 
 @Composable
-private fun HomeCollectionsSection(
+internal fun HomeCollectionsSection(
     collections: List<CollectionEntity>,
     collectionAppsById:
         Map<Long, List<InstalledApp>>,
@@ -2209,17 +2209,8 @@ private fun HomeCollectionItem(
             18.dp
         )
 
-    val aggregatedNotificationCount =
-        remember(
-            apps,
-            notificationCountFor
-        ) {
-            apps.sumOf {
-                notificationCountFor(
-                    it
-                )
-            }
-        }
+    // The lookup reads live Compose state even when the member list stays the same.
+    val aggregatedNotificationCount = apps.sumOf(notificationCountFor)
 
     val dragSurfaceColor =
         MaterialTheme

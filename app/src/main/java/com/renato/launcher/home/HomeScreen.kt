@@ -1,5 +1,9 @@
 package com.renato.launcher.home
 
+import com.renato.launcher.appearance.PanelTheme
+import com.renato.launcher.appearance.panelColor
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
 import android.text.format.DateFormat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,7 +14,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -102,6 +105,7 @@ import java.util.Date
 )
 @Composable
 fun HomeScreen(
+    modifier: Modifier = Modifier,
     favoriteApps: List<InstalledApp>,
     favoritesLoaded: Boolean,
     collections: List<CollectionEntity>,
@@ -110,7 +114,10 @@ fun HomeScreen(
     onAppClick: (InstalledApp) -> Unit,
     onChooseFavorites: () -> Unit,
     onEditFavorites: () -> Unit,
-    onOpenSearch: () -> Unit,
+    onAppearance: () -> Unit,
+    onSearchDrag: (Float) -> Unit,
+    onSearchRelease: (Boolean) -> Unit,
+    onSearchShortcut: () -> Unit,
     onAppInfo: (InstalledApp) -> Unit,
     onRemoveFavorite: (InstalledApp) -> Unit,
     onReorderFavorites: (List<InstalledApp>) -> Unit,
@@ -154,19 +161,32 @@ fun HomeScreen(
             collectionApps
     )
 
-    val density =
-        LocalDensity.current
-
-    val swipeThresholdPx =
-        remember(density) {
-            with(density) {
-                72.dp.toPx()
+    var homeMenu by remember { mutableStateOf(false) }
+    if (homeMenu) {
+        AlertDialog(
+            onDismissRequest = { homeMenu = false },
+            title = { Text("Inicio") },
+            text = {
+                Column {
+                    DropdownMenuItem(text = { Text("Editar favoritas") }, onClick = {
+                        homeMenu = false
+                        onEditFavorites()
+                    })
+                    DropdownMenuItem(text = { Text("Apariencia → Colores") }, onClick = {
+                        homeMenu = false
+                        onAppearance()
+                    })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { homeMenu = false }) { Text("Cerrar") }
             }
-        }
+        )
+    }
 
     Surface(
         modifier =
-            Modifier
+            modifier
                 .fillMaxSize()
                 .semantics {
                     testTagsAsResourceId =
@@ -182,69 +202,14 @@ fun HomeScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(
-                        onOpenSearch,
-                        swipeThresholdPx
-                    ) {
-                        var totalVerticalDrag =
-                            0f
-
-                        detectVerticalDragGestures(
-                            onDragStart = {
-                                totalVerticalDrag =
-                                    0f
-                            },
-                            onVerticalDrag = {
-                                    change,
-                                    dragAmount ->
-
-                                totalVerticalDrag +=
-                                    dragAmount
-
-                                /*
-                                 * Consume only once this clearly
-                                 * becomes a vertical swipe. Normal
-                                 * taps and long presses remain
-                                 * available to the app item.
-                                 */
-                                if (
-                                    kotlin.math.abs(
-                                        totalVerticalDrag
-                                    ) > 12f
-                                ) {
-                                    change.consume()
-                                }
-                            },
-                            onDragEnd = {
-                                if (
-                                    totalVerticalDrag <=
-                                    -swipeThresholdPx
-                                ) {
-                                    onOpenSearch()
-                                }
-
-                                totalVerticalDrag =
-                                    0f
-                            },
-                            onDragCancel = {
-                                totalVerticalDrag =
-                                    0f
-                            }
-                        )
-                    }
+                    .searchSwipe(onSearchDrag, onSearchRelease, onSearchShortcut)
                     .launcherGestureCombinedClickable(
                         onClick = {
                             // Empty Home tap does nothing.
                         },
                         onLongClickLabel =
-                            "Editar Favoritas",
-                        onLongClick = {
-                            if (
-                                favoritesLoaded
-                            ) {
-                                onEditFavorites()
-                            }
-                        }
+                            "Opciones de Inicio",
+                        onLongClick = { homeMenu = true }
                     )
                     .statusBarsPadding()
                     .navigationBarsPadding()
@@ -1532,7 +1497,7 @@ private fun FavoriteAppItem(
 }
 
 @Composable
-private fun HomeCollectionsSection(
+internal fun HomeCollectionsSection(
     collections: List<CollectionEntity>,
     collectionAppsById:
         Map<Long, List<InstalledApp>>,
@@ -2028,58 +1993,60 @@ private fun HomeCollectionsSection(
     if (
         openCollection != null
     ) {
-        CollectionHomeBottomSheet(
-            collection =
-                openCollection,
-            apps =
-                collectionAppsById[
-                    openCollection.id
-                ].orEmpty(),
-            notificationCountFor =
-                notificationCountFor,
-            onDismiss = {
-                openCollectionId =
-                    null
-            },
-            onEditCollection = {
-                openCollectionId =
-                    null
+        PanelTheme(scrim = MaterialTheme.colorScheme.scrim.copy(alpha = .32f)) {
+            CollectionHomeBottomSheet(
+                collection =
+                    openCollection,
+                apps =
+                    collectionAppsById[
+                        openCollection.id
+                    ].orEmpty(),
+                notificationCountFor =
+                    notificationCountFor,
+                onDismiss = {
+                    openCollectionId =
+                        null
+                },
+                onEditCollection = {
+                    openCollectionId =
+                        null
 
-                onEditCollection(
-                    openCollection.id
-                )
-            },
-            onAppClick = {
-                    app ->
+                    onEditCollection(
+                        openCollection.id
+                    )
+                },
+                onAppClick = {
+                        app ->
 
-                openCollectionId =
-                    null
+                    openCollectionId =
+                        null
 
-                onAppClick(
-                    app
-                )
-            },
-            onAppInfo =
-                onAppInfo,
-            onReorderApps = {
-                    reorderedApps ->
+                    onAppClick(
+                        app
+                    )
+                },
+                onAppInfo =
+                    onAppInfo,
+                onReorderApps = {
+                        reorderedApps ->
 
-                onReorderCollectionApps(
-                    openCollection.id,
-                    reorderedApps
-                )
-            },
-            onRemoveApp = {
-                    app ->
+                    onReorderCollectionApps(
+                        openCollection.id,
+                        reorderedApps
+                    )
+                },
+                onRemoveApp = {
+                        app ->
 
-                onRemoveAppFromCollection(
-                    openCollection.id,
-                    app
-                )
-            },
-            onUninstallApp =
-                onUninstallApp
-        )
+                    onRemoveAppFromCollection(
+                        openCollection.id,
+                        app
+                    )
+                },
+                onUninstallApp =
+                    onUninstallApp
+            )
+        }
     }
 }
 
@@ -2242,17 +2209,8 @@ private fun HomeCollectionItem(
             18.dp
         )
 
-    val aggregatedNotificationCount =
-        remember(
-            apps,
-            notificationCountFor
-        ) {
-            apps.sumOf {
-                notificationCountFor(
-                    it
-                )
-            }
-        }
+    // The lookup reads live Compose state even when the member list stays the same.
+    val aggregatedNotificationCount = apps.sumOf(notificationCountFor)
 
     val dragSurfaceColor =
         MaterialTheme
@@ -2998,10 +2956,8 @@ private fun CollectionHomeBottomSheet(
             onDismiss,
         sheetState =
             sheetState,
-        containerColor =
-            MaterialTheme
-                .colorScheme
-                .surface
+        containerColor = panelColor(1f),
+        contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
             modifier =

@@ -1,5 +1,6 @@
 package com.renato.launcher.collections
 
+import com.renato.launcher.appearance.panelColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -111,13 +112,7 @@ fun CollectionManagerScreen(
                 Modifier
                     .fillMaxSize()
                     .background(
-                        MaterialTheme
-                            .colorScheme
-                            .surface
-                            .copy(
-                                alpha =
-                                    0.78f
-                            )
+                        panelColor(.78f)
                     )
         )
 

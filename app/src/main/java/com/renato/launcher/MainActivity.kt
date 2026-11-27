@@ -1,5 +1,6 @@
 package com.renato.launcher
 
+import com.renato.launcher.appearance.*
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -12,6 +13,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,6 +65,7 @@ import kotlinx.coroutines.yield
 
 private enum class LauncherScreen {
     HOME,
+    COLORS,
     FAVORITES,
     COLLECTIONS,
     COLLECTION_EDITOR,
@@ -133,7 +142,8 @@ class MainActivity :
             )
 
         setContent {
-            LauncherTheme {
+            var colors by remember { mutableStateOf(LauncherColors.read(this)) }
+            LauncherTheme(colors = colors) {
                 val roleManager =
                     getSystemService(
                         RoleManager::class.java
@@ -753,6 +763,24 @@ class MainActivity :
                 if (
                     isHomeApp
                 ) {
+                    var reveal by remember(homeRequestRevision, currentScreen) { mutableFloatStateOf(0f) }
+                    var destination by remember(homeRequestRevision, currentScreen) { mutableStateOf<Float?>(null) }
+                    val drag: (Float) -> Unit = remember(homeRequestRevision, currentScreen) {
+                        { delta ->
+                            destination = null
+                            reveal = (reveal + delta).coerceIn(0f, 1f)
+                        }
+                    }
+                    val release: (Boolean) -> Unit = remember(homeRequestRevision, currentScreen) {
+                        { cancelled -> destination = if (!cancelled && reveal >= 0.5f) 1f else 0f }
+                    }
+                    LaunchedEffect(destination, homeRequestRevision, currentScreen) {
+                        val end = destination ?: return@LaunchedEffect
+                        animate(reveal, end, animationSpec = tween(180)) { value, _ -> reveal = value }
+                        if (end == 1f) currentScreen = LauncherScreen.SEARCH
+                        destination = null
+                    }
+                    Box(Modifier.fillMaxSize()) {
                     when (
                         currentScreen
                     ) {
@@ -761,6 +789,7 @@ class MainActivity :
                                 homeRequestRevision
                             ) {
                                 HomeScreen(
+                                modifier = Modifier.graphicsLayer { alpha = 1f - reveal },
                                 favoriteApps =
                                     favoriteApps,
                                 favoritesLoaded =
@@ -799,11 +828,10 @@ class MainActivity :
                                         LauncherScreen
                                             .FAVORITES
                                 },
-                                onOpenSearch = {
-                                    currentScreen =
-                                        LauncherScreen
-                                            .SEARCH
-                                },
+                                onAppearance = { currentScreen = LauncherScreen.COLORS },
+                                onSearchDrag = drag,
+                                onSearchRelease = release,
+                                onSearchShortcut = { currentScreen = LauncherScreen.SEARCH },
                                 onAppInfo = {
                                         app ->
 
@@ -961,6 +989,17 @@ class MainActivity :
                             }
                         }
 
+                        LauncherScreen.COLORS -> ColorSettingsScreen(
+                            saved = colors,
+                            apps = favoriteApps.ifEmpty { installedApps }.take(3),
+                            onCancel = { currentScreen = LauncherScreen.HOME },
+                            onSave = {
+                                it.save(this@MainActivity)
+                                colors = it
+                                currentScreen = LauncherScreen.HOME
+                            }
+                        )
+
                         LauncherScreen.FAVORITES -> {
                             FavoritePickerScreen(
                                 apps =
@@ -1065,7 +1104,7 @@ class MainActivity :
                             )
                         }
 
-                        LauncherScreen.COLLECTIONS -> {
+                        LauncherScreen.COLLECTIONS -> PanelTheme {
                             CollectionManagerScreen(
                                 collections =
                                     savedCollections,
@@ -1126,7 +1165,7 @@ class MainActivity :
                             )
                         }
 
-                        LauncherScreen.COLLECTION_EDITOR -> {
+                        LauncherScreen.COLLECTION_EDITOR -> PanelTheme {
                             val editingCollection =
                                 editingCollectionId
                                     ?.let {
@@ -1221,101 +1260,7 @@ class MainActivity :
                             )
                         }
 
-                        LauncherScreen.SEARCH -> {
-                            SearchScreen(
-                                apps =
-                                    installedApps,
-                                recentApps =
-                                    recentSections
-                                        .recentApps,
-                                recentSearchApps =
-                                    recentSections
-                                        .searchedApps,
-                                favoriteApps =
-                                    favoriteApps,
-                                onAppClick = {
-                                        app,
-                                        recordAsSearch ->
-
-                                    currentScreen =
-                                        LauncherScreen
-                                            .HOME
-
-                                    appRepository
-                                        .launch(
-                                            app
-                                        )
-
-                                    LauncherMutationQueue
-                                        .submit {
-                                            if (
-                                                recordAsSearch
-                                            ) {
-                                                recentRepository
-                                                    .recordSearchLaunch(
-                                                        app
-                                                    )
-                                            } else {
-                                                recentRepository
-                                                    .recordLaunch(
-                                                        app
-                                                    )
-                                            }
-                                        }
-                                },
-                                onAppInfo = {
-                                        app ->
-
-                                    openAppInfo(
-                                        app
-                                    )
-                                },
-                                onRemoveFavorite = {
-                                        app ->
-
-                                    val remainingFavorites =
-                                        favoriteApps
-                                            .filterNot {
-                                                    favorite ->
-
-                                                isSameApp(
-                                                    first =
-                                                        favorite,
-                                                    second =
-                                                        app
-                                                )
-                                            }
-
-                                    favoriteApps =
-                                        remainingFavorites
-
-                                    LauncherMutationQueue
-                                        .submit {
-                                            favoriteRepository
-                                                .replaceFavorites(
-                                                    remainingFavorites
-                                                )
-                                        }
-                                },
-                                onUninstallApp = {
-                                        app ->
-
-                                    requestAppUninstall(
-                                        app
-                                    )
-                                },
-                                onOpenAllApps = {
-                                    currentScreen =
-                                        LauncherScreen
-                                            .ALL_APPS
-                                },
-                                onBack = {
-                                    currentScreen =
-                                        LauncherScreen
-                                            .HOME
-                                }
-                            )
-                        }
+                        LauncherScreen.SEARCH -> Unit
 
                         LauncherScreen.ALL_APPS -> {
                             AllAppsScreen(
@@ -1363,6 +1308,113 @@ class MainActivity :
                                             .SEARCH
                                 }
                             )
+                        }
+                    }
+                        val searchOpen = currentScreen == LauncherScreen.SEARCH
+                        if (searchOpen || (currentScreen == LauncherScreen.HOME && reveal > 0f)) {
+                            Box(Modifier.fillMaxSize().graphicsLayer {
+                                translationY = if (searchOpen) 0f else size.height * (1f - reveal)
+                                val radius = minOf(28.dp.toPx(), translationY).toDp()
+                                shape = RoundedCornerShape(topStart = radius, topEnd = radius)
+                                clip = !searchOpen
+                            }) {
+                                PanelTheme {
+                                SearchScreen(
+                                        active = searchOpen,
+                                        apps =
+                                            installedApps,
+                                        recentApps =
+                                            recentSections
+                                                .recentApps,
+                                        recentSearchApps =
+                                            recentSections
+                                                .searchedApps,
+                                        favoriteApps =
+                                            favoriteApps,
+                                        onAppClick = {
+                                                app,
+                                                recordAsSearch ->
+
+                                            currentScreen =
+                                                LauncherScreen
+                                                    .HOME
+
+                                            appRepository
+                                                .launch(
+                                                    app
+                                                )
+
+                                            LauncherMutationQueue
+                                                .submit {
+                                                    if (
+                                                        recordAsSearch
+                                                    ) {
+                                                        recentRepository
+                                                            .recordSearchLaunch(
+                                                                app
+                                                            )
+                                                    } else {
+                                                        recentRepository
+                                                            .recordLaunch(
+                                                                app
+                                                            )
+                                                    }
+                                                }
+                                        },
+                                        onAppInfo = {
+                                                app ->
+
+                                            openAppInfo(
+                                                app
+                                            )
+                                        },
+                                        onRemoveFavorite = {
+                                                app ->
+
+                                            val remainingFavorites =
+                                                favoriteApps
+                                                    .filterNot {
+                                                            favorite ->
+
+                                                        isSameApp(
+                                                            first =
+                                                                favorite,
+                                                            second =
+                                                                app
+                                                        )
+                                                    }
+
+                                            favoriteApps =
+                                                remainingFavorites
+
+                                            LauncherMutationQueue
+                                                .submit {
+                                                    favoriteRepository
+                                                        .replaceFavorites(
+                                                            remainingFavorites
+                                                        )
+                                                }
+                                        },
+                                        onUninstallApp = {
+                                                app ->
+
+                                            requestAppUninstall(
+                                                app
+                                            )
+                                        },
+                                        onOpenAllApps = {
+                                            currentScreen =
+                                                LauncherScreen
+                                                    .ALL_APPS
+                                        },
+                                        onBack = {
+                                            currentScreen =
+                                                LauncherScreen
+                                                    .HOME
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {

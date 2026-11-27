@@ -1,5 +1,8 @@
 package com.renato.launcher.ui.components
 
+import com.renato.launcher.appearance.LocalLauncherColors
+import com.renato.launcher.appearance.ink
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -120,7 +123,9 @@ fun LauncherPrimaryActionButton(
         RoundedCornerShape(20.dp)
 ) {
     val containerColor =
-        if (enabled) {
+        if (enabled && LocalLauncherColors.current.custom) {
+            Color(LocalLauncherColors.current.accent)
+        } else if (enabled) {
             MaterialTheme
                 .colorScheme
                 .primary
@@ -135,7 +140,9 @@ fun LauncherPrimaryActionButton(
         }
 
     val contentColor =
-        if (enabled) {
+        if (enabled && LocalLauncherColors.current.custom) {
+            ink(containerColor)
+        } else if (enabled) {
             MaterialTheme
                 .colorScheme
                 .onPrimary
@@ -272,9 +279,9 @@ fun LauncherDropdownMenu(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val containerColor =
-        if (
-            isSystemInDarkTheme()
-        ) {
+        if (LocalLauncherColors.current.custom) {
+            MaterialTheme.colorScheme.surfaceContainer
+        } else if (isSystemInDarkTheme()) {
             Color(
                 0xFF252527
             )
